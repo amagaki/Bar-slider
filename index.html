@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>🍺 バースライダー</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#050110;overflow:hidden;cursor:none;}canvas{display:block;}</style>
+</head>
+<body><script>
+// ================================================================
+// BAR SLIDER v0.5
+// ================================================================
+const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
+const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
+const COUNTER_L=62, COUNTER_R_PAD=28;
+
+// ---- 画面状態 ----
+let SCREEN='TITLE';   // TITLE | STAGE_SELECT | GAME
+let S='AIM';          // AIM | SLIDE | RESULT | STAGE_CLEAR | STAGE_FAIL
+
+// ---- ゲーム変数 ----
+let score=0, currentStage=0;
+let roundsCleared=0, roundsNeeded=2;   // 無制限投数 / 2成功でクリア
+let g={}, obs=[], custs=[], targetIdx=0;
+let dragging=false, dStartX=0, dStartY=0;
+let travelDist=0, parts=[], shakeAmt=0;
+let resultMsg='';
+let bgStars=[], titleAnim=0, hoverStage=-1;
+// タイトル画面グラス射出
+let titleGlass={x:0,y:0,vx:0,vy:0,active:false,gone:false};
+let titleDragging=false, tdStartX=0, tdStartY=0;
+
+// ---- ループステージ用パス変数 ----
+let stagePath=[];       // [{x,y}] パス配列（ループステージで使用）
+let pathT=0;            // float: パス上の位置
+let pathSpeed=0;        // パス上の速度 (パス点数/frame)
+let loopMode=false;     // ループステージかどうか
+let loopEntryIdx=0;     // ループ開始インデックス
+let loopExitIdx=0;      // ループ終了インデックス
+
+// ================================================================
+// STAGE DEFINITIONS
+// ================================================================
+const STAGES=[
+  { id:0, name:'ストレート',      sub:'まずは基本から',   emoji:'🍺', cleared:false, isLoop:false,
+    sY(x){ let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1); return height*0.62-sin(t*PI)*10; }
+  },
+  { id:1, name:'ダウンヒル',      sub:'スピード注意！',   emoji:'🎿', cleared:false, isLoop:false,
+    sY(x){ let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1); return height*0.50+t*height*0.22; }
+  },
+  { id:2, name:'マウンテン',      sub:'山を越えろ',       emoji:'⛰️', cleared:false, isLoop:false,
+    sY(x){ let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1); return height*0.65-sin(t*PI)*140; }
+  },
+  { id:3, name:'ジャンプ台',      sub:'段差でジャンプ！', emoji:'🦘', cleared:false, isLoop:false,
+    sY(x){
+      let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1);
+      let base=height*0.62-t*height*0.06;
+      let drop=0;
+      if(t>0.44) drop=-55;
+      else if(t>0.36) drop=-55*((t-0.36)/0.08);
+      return base+drop;
+    }
+  },
+  { id:4, name:'Wウェーブ',       sub:'波に乗れ',         emoji:'🌊', cleared:false, isLoop:false,
+    sY(x){ let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1); return height*0.62-sin(t*PI*2)*80+sin(t*PI)*20; }
+  },
+  { id:5, name:'ループ・ザ・ループ', sub:'バカゲー頂点',  emoji:'🎢', cleared:false, isLoop:true,
+    sY(x){ return height*0.65; }   // フラット（customer配置用）
+  },
+];
+
+function smoothstep(e0,e1,x){ let t=constrain((x-e0)/(e1-e0),0,1); return t*t*(3-2*t); }
+function counterRight(){ return width-COUNTER_R_PAD; }
+function stageSY(x){ return STAGES[currentStage].sY(x); }
+function obstH(type){ return type==='bottle'?38:16; }
+function sgn(v){ return v>=0?1:-1; }
+
+// ================================================================
+// LOOP PATH BUILDER
+// ================================================================
+function buildLoopPath(){
+  let pts=[];
+  let flatY=height*0.65;
+  let R=min(height*0.185, 110);   // ループ半径
+  let cx=width*0.50;
+  let cy=flatY-R;                 // ループ中心（フラットラインより R 上）
+  let step=3;
+
+  // 1. 左フラット  COUNTER_L → cx
+  for(let x=COUNTER_L; x<=cx; x+=step) pts.push({x, y:flatY});
+  loopEntryIdx=pts.length-1;
+
+  // 2. ループ円
+  // 進行方向（右向き）：底 → 右 → 上 → 左 → 底 (math clock wise = angle 減少)
+  // angle PI/2 (bottom) → decreasing full circle
+  let nLoop=180;
+  for(let i=1; i<=nLoop; i++){
+    let a=HALF_PI - TWO_PI*(i/nLoop);
+    pts.push({ x: cx+R*cos(a), y: cy+R*sin(a) });
+  }
+  loopExitIdx=pts.length-1;
+
+  // 3. 右フラット  cx → counterRight()
+  for(let x=cx+step; x<=counterRight(); x+=step) pts.push({x, y:flatY});
+
+  stagePath=pts;
+}
+
+// ================================================================
+// P5 SETUP / DRAW
+// ================================================================
+function setup(){
+  createCanvas(windowWidth,windowHeight);
+  textAlign(CENTER,CENTER);
+  makeStars();
+}
+
+function draw(){
+  let ox=0,oy=0;
+  if(shakeAmt>0.4){ ox=random(-shakeAmt,shakeAmt); oy=random(-shakeAmt,shakeAmt); shakeAmt*=0.80; translate(ox,oy); }
+  background(5,1,16);
+  titleAnim+=0.016;
+
+  if(SCREEN==='TITLE'){ drawBgAtmosphere(); drawTitleScreen(); updateTitleGlass(); }
+  else if(SCREEN==='STAGE_SELECT'){ drawBgAtmosphere(); drawStageSelect(); }
+  else {
+    drawBgAtmosphere(); drawBottleShelf(); drawCounter();
+    drawBarDetails(); drawTargetZone(); drawCustomers();
+    drawObstacles(); drawGlass(); drawParticles();
+    drawGameHUD(); drawOverlay();
+    if(S==='SLIDE') physicsStep();
+    obstacleStep(); particleStep();
+  }
+  if(shakeAmt>0.4) translate(-ox,-oy);
+  drawCursor();
+}
+
+// ================================================================
+// ATMOSPHERE / STARS
+// ================================================================
+function makeStars(){ bgStars=[]; for(let i=0;i<90;i++) bgStars.push({x:random(width),y:random(height*0.55),r:random(0.5,2.2),phase:random(TWO_PI)}); }
+
+function drawBgAtmosphere(){
+  [{x:width*0.22,c:[255,80,20]},{x:width*0.50,c:[20,140,255]},{x:width*0.78,c:[160,255,80]}].forEach(gw=>{
+    let gc=drawingContext.createRadialGradient(gw.x,40,5,gw.x,40,240);
+    gc.addColorStop(0,`rgba(${gw.c[0]},${gw.c[1]},${gw.c[2]},0.15)`); gc.addColorStop(1,'rgba(0,0,0,0)');
+    drawingContext.fillStyle=gc; drawingContext.fillRect(0,0,width,height*0.6);
+  });
+  noStroke();
+  bgStars.forEach(s=>{ s.phase+=0.016; fill(255,255,240,75+sin(s.phase)*55); circle(s.x,s.y,s.r*2); });
+}
+
+function neonText(txt,x,y,sz,col,a=1.0){
+  textStyle(BOLD);
+  for(let i=7;i>0;i--){ fill(col[0],col[1],col[2],i*16*a); noStroke(); textSize(sz+i*0.8); text(txt,x,y); }
+  textStyle(NORMAL);
+}
+
+// ================================================================
+// TITLE SCREEN
+// ================================================================
+function drawTitleScreen(){
+  let pulse=sin(titleAnim*1.2)*0.3+0.7;
+  neonText('BAR SLIDER',width/2,height*0.30,72,[255,120,0],pulse);
+  fill(210,170,100,180+sin(titleAnim)*40); noStroke(); textStyle(ITALIC); textSize(18);
+  text('〜 グラスを滑らせろ、バーテン伝説 〜',width/2,height*0.42); textStyle(NORMAL);
+
+  // タイトルグラス（射出済みなら追従、未射出ならアニメ位置）
+  if(!titleGlass.active && !titleGlass.gone){
+    titleGlass.x=width/2+sin(titleAnim*0.7)*120;
+    titleGlass.y=height*0.54+sin(titleAnim*1.1)*12;
+  }
+  if(!titleGlass.gone){
+    drawAnimGlass(titleGlass.x, titleGlass.y, titleGlass.angle||0);
+  }
+
+  // ドラッグ中のUI表示
+  if(titleDragging && !titleGlass.active){
+    let ddx=mouseX-tdStartX, ddy=mouseY-tdStartY;
+    let d=constrain(sqrt(ddx*ddx+ddy*ddy),0,MAX_DRAG);
+    let pct=constrain(d/(MAX_DRAG*0.5),0,2.0);
+    let pCol=pct<=1.0?lerpColor(color(50,220,100),color(255,200,0),pct):lerpColor(color(255,200,0),color(255,45,45),pct-1.0);
+    stroke(255,255,255,70); strokeWeight(1.5); line(titleGlass.x,titleGlass.y,tdStartX,tdStartY);
+    stroke(red(pCol),green(pCol),blue(pCol),200); fill(red(pCol),green(pCol),blue(pCol),200); strokeWeight(2.5);
+    drawArrow(titleGlass.x,titleGlass.y,titleGlass.x-ddx*0.8,titleGlass.y-ddy*0.8);
+    noFill(); stroke(255,215,0,80); strokeWeight(1.5); circle(titleGlass.x,titleGlass.y,d*0.72);
+    fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(13); textStyle(BOLD);
+    text(floor(pct*100)+'%',mouseX+28,mouseY-18); textStyle(NORMAL);
+  }
+
+  // START ボタン
+  let bw=240,bh=52,bx=width/2-120,by=height*0.68;
+  drawButton(bx,by,bw,bh,'PLAY START',mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh,[255,180,0]);
+  // ヒント
+  fill(100,100,100); noStroke(); textSize(10);
+  text('グラスを引っ張って遊べるよ',width/2,height*0.62);
+  fill(80,80,80); textSize(10); text('v0.6  prototype',width/2,height-18);
+}
+
+function drawAnimGlass(x,y,angle=0){
+  push(); translate(x,y); rotate(angle);
+  stroke(188,212,255,130); strokeWeight(1.5); noFill();
+  beginShape(); vertex(-GLASS_W/2,GLASS_H); vertex(-GLASS_W/2-3,0); vertex(GLASS_W/2+3,0); vertex(GLASS_W/2,GLASS_H); endShape(CLOSE);
+  let fh=GLASS_H*0.75; noStroke(); fill(212,152,32,155);
+  beginShape(); vertex(-GLASS_W/2+1,GLASS_H-1); vertex(-GLASS_W/2-1,GLASS_H-fh); vertex(GLASS_W/2+1,GLASS_H-fh); vertex(GLASS_W/2-1,GLASS_H-1); endShape(CLOSE);
+  fill(238,232,215,200); ellipse(0,GLASS_H-fh,GLASS_W-2,6); pop();
+}
+
+function updateTitleGlass(){
+  if(!titleGlass.active) return;
+  titleGlass.vy+=GRAVITY; titleGlass.vx*=AIR_FRICTION;
+  titleGlass.x+=titleGlass.vx; titleGlass.y+=titleGlass.vy;
+  titleGlass.angle=(titleGlass.angle||0)+titleGlass.vx*0.025;
+  if(titleGlass.y>height+60 || titleGlass.x<-100 || titleGlass.x>width+100){
+    titleGlass.gone=true; titleGlass.active=false;
+    // 3秒後にリセット
+    setTimeout(()=>{ titleGlass={x:0,y:0,vx:0,vy:0,active:false,gone:false,angle:0}; },2000);
+  }
+}
+
+function drawButton(x,y,w,h,label,hov,col){
+  push();
+  if(hov){ fill(col[0],col[1],col[2],38); noStroke(); rect(x-4,y-4,w+8,h+8,14); }
+  stroke(col[0],col[1],col[2],hov?230:150); strokeWeight(hov?2.5:1.5);
+  fill(col[0],col[1],col[2],hov?32:16); rect(x,y,w,h,10);
+  fill(col[0],col[1],col[2],hov?255:200); noStroke(); textStyle(BOLD); textSize(hov?20:18);
+  text(label,x+w/2,y+h/2); textStyle(NORMAL); pop();
+}
+
+// ================================================================
+// STAGE SELECT
+// ================================================================
+function drawStageSelect(){
+  neonText('STAGE SELECT',width/2,height*0.10,36,[80,200,255],0.9);
+  let cols=3,cardW=min(width*0.28,240),cardH=cardW*0.62;
+  let gapX=(width-cardW*cols)/(cols+1), startY=height*0.20;
+  hoverStage=-1;
+  STAGES.forEach((st,i)=>{
+    let col=i%cols, row=floor(i/cols);
+    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+30);
+    let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
+    if(hov) hoverStage=i;
+    drawStageCard(cx,cy,cardW,cardH,st,hov);
+  });
+  let bw=140,bh=40,bx=width/2-70,by=height*0.92;
+  drawButton(bx,by,bw,bh,'← タイトル',mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh,[150,150,150]);
+}
+
+function drawStageCard(x,y,w,h,st,hov){
+  push();
+  let bc=st.cleared?[100,230,100]:hov?[255,200,60]:[80,80,120];
+  if(hov){ fill(255,200,60,18); noStroke(); rect(x-3,y-3,w+6,h+6,14); }
+  stroke(bc[0],bc[1],bc[2],hov?220:140); strokeWeight(hov?2:1.5);
+  fill(12,10,28,200); rect(x,y,w,h,10);
+  if(st.cleared){ noStroke(); fill(100,230,100,200); textSize(11); textStyle(BOLD); text('✓ CLEAR',x+w-38,y+14); textStyle(NORMAL); }
+  noStroke(); textSize(28); text(st.emoji,x+w/2,y+h*0.35);
+  fill(hov?color(255,220,80):color(220,220,255)); textStyle(BOLD); textSize(hov?17:15);
+  text(st.name,x+w/2,y+h*0.62); textStyle(NORMAL);
+  fill(150,150,170); textSize(10); text(st.sub,x+w/2,y+h*0.80);
+  pop();
+}
+
+// ================================================================
+// GAME INIT
+// ================================================================
+function startGame(idx){
+  currentStage=idx; roundsCleared=0; score=0;
+  loopMode=STAGES[idx].isLoop;
+  if(loopMode) buildLoopPath();
+  SCREEN='GAME'; initRound();
+}
+
+function initRound(){
+  // 酒の量：5段階からランダム選択
+  let fillLevels=[
+    {amt:0.10, label:'ひとくち', color:[175,95,22]},
+    {amt:0.30, label:'少なめ',   color:[195,120,28]},
+    {amt:0.55, label:'半分',     color:[212,152,32]},
+    {amt:0.78, label:'多め',     color:[225,168,35]},
+    {amt:0.97, label:'なみなみ', color:[240,195,40]},
+  ];
+  let fl=fillLevels[floor(random(fillLevels.length))];
+  g={x:130,y:0,vx:0,vy:0,angle:0,done:false,airborne:false,
+     fillAmt:fl.amt, fillLabel:fl.label, fillColor:fl.color};
+  if(loopMode){
+    pathT=0; pathSpeed=0;
+    g.x=stagePath[0].x; g.y=stagePath[0].y-GLASS_H;
+  } else {
+    g.y=stageSY(g.x)-GLASS_H;
+  }
+  travelDist=0;
+
+  // 障害物配置
+  let W=width;
+  if(loopMode){
+    let cx=W*0.50, R=min(height*0.185,110);
+    obs=[
+      {type:'ashtray', x:cx-R-80,  y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'bottle',  x:cx+R+70,  y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'nuts',    x:cx+R+170, y:0,vx:0,vy:0,va:0,angle:0,on:true},
+    ];
+    obs.forEach(o=>{ o.y=stageSY(o.x)-obstH(o.type); });
+  } else {
+    obs=[
+      {type:'ashtray',x:W*0.36,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'bottle', x:W*0.52,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'nuts',   x:W*0.67,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+    ];
+    obs.forEach(o=>{ o.y=stageSY(o.x)-obstH(o.type); });
+  }
+
+  let cxs=[W*0.78,W*0.87,W*0.95], names=['おじさん','姉ちゃん','おっちゃん'];
+  custs=cxs.map((cx,i)=>({x:cx,name:names[i],y:stageSY(cx),face:'😐'}));
+  targetIdx=floor(random(custs.length));
+  dragging=false; parts=[]; resultMsg='';
+  S='AIM';
+}
+
+// ================================================================
+// DRAW COUNTER (ループ / 通常 分岐)
+// ================================================================
+function drawCounter(){
+  if(loopMode){ drawLoopCounter(); } else { drawStraightCounter(); }
+}
+
+function drawStraightCounter(){
+  let CR=counterRight(), pts=[];
+  for(let x=COUNTER_L;x<=CR;x+=4) pts.push({x,y:stageSY(x)});
+  noStroke(); fill(46,24,6);
+  beginShape(); pts.forEach(p=>vertex(p.x,p.y+14)); vertex(CR,height); vertex(COUNTER_L,height); endShape(CLOSE);
+  for(let i=1;i<11;i++){ stroke(38,18,4,52+i*5); strokeWeight(1); noFill(); beginShape(); pts.forEach(p=>{let gy=p.y+18+i*16;if(gy<height)vertex(p.x,gy);}); endShape(); }
+  stroke(92,55,18); strokeWeight(16); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y+7)); endShape();
+  stroke(155,110,45,170); strokeWeight(2.5); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y)); endShape();
+  stroke(215,185,105,50); strokeWeight(1); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y-3)); endShape();
+  stroke(35,16,4); strokeWeight(1); fill(38,20,6);
+  beginShape(); vertex(COUNTER_L,stageSY(COUNTER_L)+14); vertex(CR,stageSY(CR)+14); vertex(CR,stageSY(CR)+30); vertex(COUNTER_L,stageSY(COUNTER_L)+30); endShape(CLOSE);
+}
+
+function drawLoopCounter(){
+  if(stagePath.length===0) return;
+  let pts=stagePath;
+
+  // 木製レール側面（厚み）
+  stroke(92,55,18); strokeWeight(14); noFill();
+  beginShape(); pts.forEach(p=>vertex(p.x,p.y+6)); endShape();
+
+  // レール天面
+  stroke(155,110,45,180); strokeWeight(2.5); noFill();
+  beginShape(); pts.forEach(p=>vertex(p.x,p.y)); endShape();
+
+  // ハイライト
+  stroke(215,185,105,55); strokeWeight(1); noFill();
+  beginShape(); pts.forEach(p=>vertex(p.x,p.y-2)); endShape();
+
+  // フラット部分は床板を埋める
+  let flatY=height*0.65, CR=counterRight();
+  noStroke(); fill(46,24,6);
+  beginShape();
+  vertex(COUNTER_L,flatY+14);
+  // 左フラットのみ
+  for(let x=COUNTER_L;x<=width*0.50-min(height*0.185,110)-2;x+=4) vertex(x,flatY+14);
+  vertex(width*0.50-min(height*0.185,110)-2,height);
+  vertex(COUNTER_L,height);
+  endShape(CLOSE);
+  // 右フラット
+  noStroke(); fill(46,24,6);
+  beginShape();
+  vertex(width*0.50+min(height*0.185,110)+2,flatY+14);
+  for(let x=width*0.50+min(height*0.185,110)+2;x<=CR;x+=4) vertex(x,flatY+14);
+  vertex(CR,height); vertex(width*0.50+min(height*0.185,110)+2,height);
+  endShape(CLOSE);
+}
+
+// ================================================================
+// DRAW HELPERS
+// ================================================================
+function drawBottleShelf(){
+  let sy1=height*0.25,sy2=height*0.31;
+  stroke(65,40,14); strokeWeight(5); line(width*0.12,sy1,width*0.88,sy1);
+  strokeWeight(4); line(width*0.18,sy2,width*0.82,sy2);
+  stroke(48,28,8); strokeWeight(4);
+  [0.185,0.38,0.58,0.78,0.865].forEach(px=>line(px*width,sy1,px*width,sy1-30));
+  noStroke(); fill(20,28,40,140); rect(width*0.13,sy1-75,width*0.74,74);
+  stroke(75,68,55,60); strokeWeight(1); noFill(); rect(width*0.13,sy1-75,width*0.74,74);
+  let cols=[[18,65,28],[72,14,8],[15,42,72],[80,55,10],[35,18,75],[12,68,55],[90,22,18],[28,60,80]];
+  [[0.17,0.24,0.30,0.37,0.44,0.51,0.58,0.65,0.72,0.79,0.85],
+   [0.20,0.28,0.36,0.46,0.56,0.66,0.74,0.82]].forEach((bxs,ri)=>{
+    bxs.forEach((bx,i)=>{
+      let x=bx*width,sy=ri===0?sy1:sy2,h=44+sin(i*1.7)*14,w=8+sin(i*0.9)*2.5,c=cols[i%cols.length];
+      noStroke(); fill(c[0],c[1],c[2],210); rect(x-w/2,sy-h,w,h*0.72,2); rect(x-2.5,sy-h*0.96,5,h*0.32,1);
+      fill(220,205,175,95); rect(x-w/2+0.5,sy-h*0.48,w-1,h*0.26,1);
+    });
+  });
+}
+
+function drawBarDetails(){
+  let tapX=COUNTER_L+28,tapY=stageSY(tapX)-2;
+  noStroke(); fill(72,68,62); rect(tapX-7,tapY-8,14,9,2);
+  fill(145,130,105); rect(tapX-3,tapY-42,6,36,2);
+  fill(38,85,145); rect(tapX-6,tapY-50,12,12,3); fill(55,120,195); rect(tapX-5,tapY-49,10,5,2);
+  fill(235,215,155); textSize(5); noStroke(); text('BEER',tapX,tapY-43);
+  [width*0.45,width*0.61].forEach(cx=>{ let cy=stageSY(cx); stroke(105,75,38,140); strokeWeight(1.5); fill(62,42,18,160); ellipse(cx,cy,24,8); });
+  [width*0.28,width*0.52,width*0.74].forEach(lx=>{
+    let glowY=height*0.22; stroke(40,35,30); strokeWeight(1.5); line(lx,height*0.09,lx,glowY-14);
+    noStroke(); fill(45,35,18);
+    beginShape(); vertex(lx-14,glowY-14); vertex(lx+14,glowY-14); vertex(lx+9,glowY+2); vertex(lx-9,glowY+2); endShape(CLOSE);
+    fill(255,215,140,220); ellipse(lx,glowY+3,10,5);
+    let lg=drawingContext.createRadialGradient(lx,glowY,2,lx,glowY+90,130);
+    lg.addColorStop(0,'rgba(255,210,120,0.18)'); lg.addColorStop(1,'rgba(0,0,0,0)');
+    drawingContext.fillStyle=lg; drawingContext.fillRect(lx-130,glowY,260,240);
+  });
+}
+
+function drawTargetZone(){
+  if(S!=='AIM'&&S!=='SLIDE') return;
+  let tc=custs[targetIdx], pls=sin(frameCount*0.09)*0.5+0.5;
+  noStroke(); fill(255,215,0,22+pls*18); ellipse(tc.x,stageSY(tc.x),ZONE_W*2+8,14);
+  stroke(255,215,0,110+pls*80); strokeWeight(1.5); noFill();
+  let y=stageSY(tc.x)-4;
+  for(let i=0;i<14;i++){ if(i%2===0){ let x1=tc.x-ZONE_W+(i/14)*ZONE_W*2,x2=tc.x-ZONE_W+((i+0.75)/14)*ZONE_W*2; line(x1,y,x2,y); } }
+  fill(255,215,0,155+pls*65); noStroke(); textSize(17); text('▼',tc.x,stageSY(tc.x)-26-pls*6);
+}
+
+function drawCustomers(){
+  custs.forEach((c,i)=>{
+    let isTarget=i===targetIdx, sy=stageSY(c.x);
+    push(); translate(c.x,sy-8);
+    if(isTarget&&S==='AIM'){ fill(255,215,0,38+sin(frameCount*0.1)*18); noStroke(); ellipse(0,-48,58,18); fill(255,215,0,190); textSize(10); text('オーダー！',0,-49); }
+    fill(isTarget?color(75,52,128):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
+    fill(210,170,130); ellipse(0,-56,24,26); textSize(14); noStroke(); text(c.face,0,-56);
+    fill(165,165,165); textSize(9); text(c.name,0,-76); pop();
+  });
+}
+
+function drawObstacles(){
+  obs.forEach(o=>{
+    if(!o.on){ let a=constrain(map(o.y,height*0.42,height*0.9,1.0,0.0),0,1); drawingContext.globalAlpha=a; }
+    renderObs(o);
+    if(!o.on) drawingContext.globalAlpha=1.0;
+  });
+}
+function renderObs(o){
+  push(); translate(o.x,o.y); rotate(o.angle);
+  if(o.type==='ashtray'){
+    fill(128,125,115); stroke(92,88,78); strokeWeight(1.5); ellipse(0,4,36,14);
+    fill(68,65,58); noStroke(); ellipse(0,2,26,8);
+    fill(210,178,138); stroke(145,115,85); strokeWeight(0.5); rect(-4,-8,8,5,1);
+    fill(75,75,70); noStroke(); circle(-4,-6,3.5);
+    fill(160,158,152,180); for(let j=0;j<4;j++) ellipse(-6+j*3,-3,2,1.5);
+  } else if(o.type==='bottle'){
+    fill(22,72,36); stroke(14,52,24); strokeWeight(1); rect(-6,-24,12,28,4);
+    fill(26,76,40); rect(-5,-28,10,6,2); rect(-3,-38,6,14,1);
+    fill(172,130,90); noStroke(); rect(-2.5,-40,5,5,1);
+    fill(205,188,162); noStroke(); rect(-5,-18,10,12,1); fill(115,72,38); textSize(6); text('VIN',0,-12);
+  } else {
+    fill(152,100,48); stroke(112,70,30); strokeWeight(1.5); arc(0,2,34,17,0,PI,OPEN); line(-17,2,17,2);
+    fill(96,60,20,120); noStroke(); arc(0,4,28,10,0,PI,CHORD);
+    let nc=[color(148,95,36),color(125,80,26),color(170,115,50)];
+    for(let j=0;j<7;j++){ fill(nc[j%3]); ellipse(-9+j*3,-4+sin(j*0.9)*2.5,5.5,4); }
+  }
+  pop();
+}
+
+function drawGlass(){
+  let dx=g.x;
+  if(S==='AIM'&&dragging){ let pull=constrain(dStartX-mouseX,0,45); dx=g.x-pull*0.22; }
+  push(); translate(dx,g.y); rotate(g.angle);
+  stroke(188,212,255,155); strokeWeight(1.5); noFill();
+  beginShape(); vertex(-GLASS_W/2,GLASS_H); vertex(-GLASS_W/2-3,0); vertex(GLASS_W/2+3,0); vertex(GLASS_W/2,GLASS_H); endShape(CLOSE);
+  let fh=(GLASS_H-3)*g.fillAmt;
+  let fc=g.fillColor||[212,152,32];
+  noStroke(); fill(fc[0],fc[1],fc[2],180);
+  let taper=3*(1-g.fillAmt);
+  beginShape(); vertex(-GLASS_W/2+1,GLASS_H-1); vertex(-GLASS_W/2-2+taper,GLASS_H-fh); vertex(GLASS_W/2+2-taper,GLASS_H-fh); vertex(GLASS_W/2-1,GLASS_H-1); endShape(CLOSE);
+  fill(238,232,215,218); ellipse(0,GLASS_H-fh-1,GLASS_W-1,7);
+  stroke(255,255,255,80); strokeWeight(1); noFill(); line(-GLASS_W/2-1,GLASS_H*0.12,-GLASS_W/2,GLASS_H*0.78);
+  // 酒量ラベル（グラスの上）
+  if(g.fillLabel){
+    noStroke();
+    fill(fc[0],fc[1],fc[2],210);
+    textSize(10); textStyle(BOLD);
+    text(g.fillLabel, 0, -10);
+    textStyle(NORMAL);
+  }
+  pop();
+
+  if(S==='AIM'&&dragging){
+    let ddx=mouseX-dStartX,ddy=mouseY-dStartY;
+    let dist=constrain(sqrt(ddx*ddx+ddy*ddy),0,MAX_DRAG);
+    let pct=constrain(dist/(MAX_DRAG*0.5),0,2.0);
+    let pCol=pct<=1.0?lerpColor(color(50,220,100),color(255,200,0),pct):lerpColor(color(255,200,0),color(255,45,45),pct-1.0);
+    stroke(255,255,255,70); strokeWeight(1.5); line(g.x,g.y+GLASS_H/2,dStartX,dStartY);
+    let tx=g.x-ddx*0.85, ty=g.y+GLASS_H/2-ddy*0.85;
+    stroke(red(pCol),green(pCol),blue(pCol),200); fill(red(pCol),green(pCol),blue(pCol),200); strokeWeight(2.5);
+    drawArrow(g.x,g.y+GLASS_H/2,tx,ty);
+    noFill(); stroke(255,215,0,80); strokeWeight(1.5); circle(g.x,g.y+GLASS_H/2,dist*1.1);
+    stroke(255,215,0,45); strokeWeight(1); circle(g.x,g.y+GLASS_H/2,MAX_DRAG*0.5*1.1);
+    fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(14); textStyle(BOLD); text(floor(pct*100)+'%',mouseX+28,mouseY-20); textStyle(NORMAL);
+    if(pct>=1.9){ fill(255,45,45,170+sin(frameCount*0.3)*60); textSize(11); text('MAX!',mouseX+28,mouseY-4); }
+  }
+}
+
+// 着地ゾーン判定: 最も近い客を選ぶ・速度閾値を厳しく（甘め判定はゾーン幅で対応）
+const DELIVER_SPEED=2.8;   // この速度以下で「止まった」とみなす
+const ZONE_HIT=ZONE_W+14;  // 判定幅は表示より少し広め（バカゲー判定）
+
+function findHitCustomer(){
+  // ZONE内の客のうち最もX距離が近い一人を返す
+  let best=-1, bestDist=Infinity;
+  custs.forEach((c,i)=>{
+    let d=abs(g.x-c.x);
+    if(d<ZONE_HIT && d<bestDist){ bestDist=d; best=i; }
+  });
+  return best;
+}
+
+function drawArrow(x1,y1,x2,y2){ line(x1,y1,x2,y2); let ang=atan2(y2-y1,x2-x1); push(); translate(x2,y2); rotate(ang); noStroke(); triangle(0,0,-12,-5,-12,5); pop(); }
+function drawParticles(){ noStroke(); parts.forEach(p=>{ fill(red(p.c),green(p.c),blue(p.c),p.alpha); circle(p.x,p.y,p.r*2); }); }
+
+// ================================================================
+// HUD & OVERLAY
+// ================================================================
+function drawGameHUD(){
+  let st=STAGES[currentStage];
+  fill(255,215,0); noStroke(); textStyle(BOLD); textSize(13); textAlign(LEFT,TOP);
+  text(st.emoji+' '+st.name,18,16); textStyle(NORMAL);
+  fill(255,255,255); textSize(12); text('SCORE  '+score,18,36);
+
+  // クリア進捗（右上）
+  textAlign(RIGHT,TOP);
+  let hearts=''; for(let i=0;i<roundsCleared;i++) hearts+='🍺';
+  fill(255,215,0); textSize(13); textStyle(BOLD); text(hearts||'―',width-18,16); textStyle(NORMAL);
+  fill(180,180,180); textSize(10); text('あと'+(roundsNeeded-roundsCleared)+'回成功でクリア',width-18,36);
+
+  textAlign(CENTER,CENTER);
+  if(S==='AIM'){
+    fill(255,255,255,200); textSize(13); text('オーダー: '+custs[targetIdx].name+' にビールを！',width/2,26);
+    fill(155,155,155,130); textSize(11); text('グラスをクリック → 引っ張る → 離す',width/2,height-26);
+  }
+
+  // ステージ選択に戻るボタン（左下・小さめ）
+  let bw=130,bh=30,bx=14,by=height-46;
+  let hovBack=mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh;
+  push();
+  stroke(120,120,120,hovBack?200:100); strokeWeight(1);
+  fill(0,0,0,hovBack?120:70); rect(bx,by,bw,bh,6);
+  fill(180,180,180,hovBack?240:160); noStroke(); textSize(11); textStyle(hovBack?BOLD:NORMAL);
+  textAlign(CENTER,CENTER); text('← ステージ選択',bx+bw/2,by+bh/2);
+  textStyle(NORMAL); textAlign(CENTER,CENTER);
+  pop();
+}
+
+function drawOverlay(){
+  if(S==='RESULT'){
+    fill(0,0,0,160); noStroke(); rect(width/2-240,height/2-65,480,130,14);
+    fill(255,215,0); textSize(26); textStyle(BOLD); text(resultMsg,width/2,height/2-16); textStyle(NORMAL);
+    fill(175,175,175); textSize(12);
+    text('成功: '+roundsCleared+'/'+roundsNeeded+'  |  クリックで続ける',width/2,height/2+28);
+  }
+  if(S==='STAGE_CLEAR'){
+    fill(0,0,0,175); noStroke(); rect(width/2-260,height/2-90,520,180,16);
+    fill(100,255,120); textSize(32); textStyle(BOLD); text('🎉 STAGE CLEAR！',width/2,height/2-28); textStyle(NORMAL);
+    fill(255,215,0); textSize(18); text('SCORE: '+score,width/2,height/2+12);
+    fill(175,175,175); textSize(13); text('クリックでステージ選択へ',width/2,height/2+44);
+  }
+  if(S==='STAGE_FAIL'){
+    fill(0,0,0,175); noStroke(); rect(width/2-260,height/2-90,520,180,16);
+    fill(255,100,100); textSize(32); textStyle(BOLD); text('💧 ステージ失敗…',width/2,height/2-28); textStyle(NORMAL);
+    fill(255,215,0); textSize(18); text('SCORE: '+score,width/2,height/2+12);
+    fill(175,175,175); textSize(13); text('クリックでステージ選択へ',width/2,height/2+44);
+  }
+}
+
+// ================================================================
+// PHYSICS — 通常
+// ================================================================
+function physicsStep(){
+  if(g.done) return;
+  if(loopMode){ physicsStepLoop(); return; }
+  if(g.airborne){
+    g.vy+=GRAVITY; g.vx*=AIR_FRICTION;
+    g.x+=g.vx; g.y+=g.vy;
+    travelDist+=abs(g.vx)+abs(g.vy);
+    g.angle+=g.vx*0.018;
+    let CR=counterRight();
+    if(g.x<COUNTER_L-40||g.x>CR+60||g.y>height+60){ finishRound(); return; }
+    let surf=stageSY(g.x)-GLASS_H;
+    if(g.y>=surf&&g.vy>0){ g.y=surf; g.vy=0; g.vx*=0.70; g.airborne=false; shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),8); }
+    obs.forEach(o=>{ if(o.on&&abs(g.x-o.x)<22&&abs(g.y-o.y)<22) hitObs(o); });
+    if(travelDist>60){
+      let hit=findHitCustomer();
+      if(hit>=0 && abs(g.vx)<DELIVER_SPEED){ deliverTo(hit); return; }
+    }
+  } else {
+    let slope=stageSY(g.x+1)-stageSY(g.x);
+    g.vx+=slope*SLOPE_FACTOR; g.vx*=FRICTION;
+    g.x+=g.vx; g.y=stageSY(g.x)-GLASS_H;
+    travelDist+=abs(g.vx);
+    g.angle=lerp(g.angle,-g.vx*0.024,0.12);
+    obs.forEach(o=>{ if(o.on&&abs(g.x-o.x)<20) hitObs(o); });
+    if(travelDist>60){
+      let hit=findHitCustomer();
+      if(hit>=0 && abs(g.vx)<DELIVER_SPEED){ deliverTo(hit); return; }
+    }
+    let CR=counterRight();
+    if(g.x>CR+10) finishRound();
+    else if(g.x<COUNTER_L+20&&travelDist>100) finishRound();
+    else if(abs(g.vx)<0.35&&travelDist>80) finishRound();
+  }
+}
+
+// ================================================================
+// PHYSICS — ループ（パス追従 + 空中対応）
+// ================================================================
+function physicsStepLoop(){
+  if(g.done) return;
+
+  // 空中中はフリー物理（通常と同じ）
+  if(g.airborne){
+    g.vy+=GRAVITY; g.vx*=AIR_FRICTION;
+    g.x+=g.vx; g.y+=g.vy;
+    travelDist+=abs(g.vx)+abs(g.vy);
+    g.angle+=g.vx*0.018;
+    if(g.x<COUNTER_L-40||g.x>counterRight()+60||g.y>height+60){ finishRound(); return; }
+    // パス上のどこかに着地したか探す
+    let landed=false;
+    for(let i=0;i<stagePath.length-1;i++){
+      let px=stagePath[i].x, py=stagePath[i].y;
+      if(abs(g.x-px)<8 && g.y>=py-GLASS_H && g.vy>0){
+        // 着地：パス追従モードに切り替え
+        pathT=i; pathSpeed=g.vx*0.28;
+        g.y=py-GLASS_H; g.vx=0; g.vy=0; g.airborne=false;
+        shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),8);
+        landed=true; break;
+      }
+    }
+    if(landed) return;
+    obs.forEach(o=>{ if(o.on&&dist(g.x,g.y,o.x,o.y)<22) hitObs(o); });
+    return;
+  }
+  let n=stagePath.length;
+  let iCurr=floor(constrain(pathT,0,n-2));
+  let iNext=min(iCurr+1,n-1);
+
+  // 重力：次のパス点との高さ差で加速減速
+  let dh=stagePath[iCurr].y - stagePath[iNext].y; // 正=次が上=減速
+  // 実際のエネルギーは dy に比例
+  // dy > 0 (next is higher up on screen = lower y = uphill) → decelerate
+  // In screen coords: stagePath[iNext].y < stagePath[iCurr].y means going up → decelerate
+  let slopeDelta=(stagePath[iNext].y - stagePath[iCurr].y) * SLOPE_FACTOR * 0.6;
+  pathSpeed+=slopeDelta;
+  pathSpeed*=FRICTION;
+
+  pathT+=pathSpeed;
+  pathT=constrain(pathT,0,n-1);
+  travelDist+=abs(pathSpeed);
+
+  let idx=floor(constrain(pathT,0,n-2));
+  g.x=stagePath[idx].x;
+  g.y=stagePath[idx].y-GLASS_H;
+
+  // グラスの傾き：パス接線に合わせる
+  let i2=min(idx+1,n-1);
+  let dx2=stagePath[i2].x-stagePath[idx].x;
+  let dy2=stagePath[i2].y-stagePath[idx].y;
+  g.angle=lerp(g.angle,atan2(dy2,dx2),0.18);
+
+  // 障害物チェック
+  obs.forEach(o=>{ if(o.on&&dist(g.x,g.y+GLASS_H/2,o.x,o.y)<22) hitObs(o); });
+
+  // ゾーン内判定（右フラット通過後）
+  if(pathT>loopExitIdx+10){
+    let hit=findHitCustomer();
+    if(hit>=0 && abs(pathSpeed)<DELIVER_SPEED){ deliverTo(hit); return; }
+  }
+
+  // 終端
+  if(pathT>=n-3){ finishRound(); return; }
+  // ループ前で失速（逆走して戻ってきた）
+  if(pathT<=2&&pathSpeed<0){ resultMsg='😵 失速して戻った！'; roundOver(); return; }
+  // 停止
+  if(abs(pathSpeed)<0.25&&travelDist>30){ finishRound(); return; }
+}
+
+// ================================================================
+// HIT / DELIVER / FINISH
+// ================================================================
+function hitObs(o){
+  o.on=false;
+  let spd=loopMode?pathSpeed:g.vx;
+  o.vx=spd*0.65+sgn(spd)*random(2,5);
+  o.vy=-random(5,10); o.va=random(-0.17,0.17);
+  if(loopMode) pathSpeed*=0.72+random(-0.06,0.06);
+  else g.vx*=0.72+random(-0.06,0.06);
+  shakeAmt=7;
+  let pc=o.type==='bottle'?color(38,155,55):o.type==='ashtray'?color(155,150,135):color(170,125,55);
+  spawnParts(o.x,o.y,pc,15);
+}
+
+function deliverTo(idx){
+  if(g.done) return;
+  g.done=true; g.vx=0; g.vy=0; g.angle=0; g.airborne=false; pathSpeed=0;
+  if(idx===targetIdx){
+    score+=100; roundsCleared++;
+    resultMsg='🍺 ナイスサーブ！  +100';
+    custs[idx].face='😄'; spawnParts(g.x,g.y,color(255,215,0),28); shakeAmt=3;
+  } else {
+    resultMsg='😅 違う人に届いた！';
+    custs[idx].face='😲'; custs[targetIdx].face='😤';
+  }
+  checkStageEnd();
+}
+
+function finishRound(){
+  if(g.done) return;
+  if(loopMode){
+    if(g.airborne && g.y>height)              resultMsg='🌊 床に落ちた！';
+    else if(g.airborne && g.x>counterRight()) resultMsg='🥊 端から落ちた！';
+    else if(g.airborne && g.x<COUNTER_L-40)  resultMsg='↩️ 手元に戻った！';
+    else if(pathT>=stagePath.length-3)        resultMsg='🥊 端から飛び出た！';
+    else if(abs(pathSpeed)<0.25)              resultMsg='😬 途中で止まった…';
+    else                                       resultMsg='😬 届かなかった…';
+  } else {
+    if(g.y>height)             resultMsg='🌊 床に落ちた！';
+    else if(g.x>counterRight()) resultMsg='🥊 端から落ちた！';
+    else if(g.x<COUNTER_L+30)  resultMsg='↩️ 手元に戻った！';
+    else                         resultMsg='😬 届かなかった…';
+  }
+  custs[targetIdx].face='😤';
+  g.done=true; g.vx=0; g.vy=0; pathSpeed=0;
+  checkStageEnd();
+}
+
+function roundOver(){   // 失速専用
+  g.done=true; g.vx=0; g.vy=0; pathSpeed=0;
+  custs[targetIdx].face='😤';
+  checkStageEnd();
+}
+
+function checkStageEnd(){
+  if(roundsCleared>=roundsNeeded){ STAGES[currentStage].cleared=true; S='STAGE_CLEAR'; }
+  else S='RESULT';
+}
+
+function obstacleStep(){ obs.forEach(o=>{ if(o.on)return; o.x+=o.vx; o.y+=o.vy; o.vy+=0.44; o.vx*=0.98; o.angle+=o.va; }); }
+function spawnParts(x,y,c,n=12){ for(let i=0;i<n;i++) parts.push({x,y,c,vx:random(-6,6),vy:random(-9,0.5),r:random(2,5),alpha:255}); }
+function particleStep(){ parts=parts.filter(p=>p.alpha>4); parts.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.3; p.vx*=0.94; p.alpha*=0.91; }); }
+
+// ================================================================
+// INPUT
+// ================================================================
+function mousePressed(){
+  if(SCREEN==='TITLE'){
+    let bw=240,bh=52,bx=width/2-120,by=height*0.68;
+    if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ SCREEN='STAGE_SELECT'; return; }
+    // タイトルグラスのドラッグ開始
+    if(!titleGlass.active && !titleGlass.gone){
+      let dx=mouseX-titleGlass.x, dy=mouseY-titleGlass.y;
+      if(sqrt(dx*dx+dy*dy)<50){ titleDragging=true; tdStartX=mouseX; tdStartY=mouseY; }
+    }
+    return;
+  }
+  if(SCREEN==='STAGE_SELECT'){
+    let cols=3,cardW=min(width*0.28,240),cardH=cardW*0.62,gapX=(width-cardW*cols)/(cols+1),startY=height*0.20;
+    STAGES.forEach((st,i)=>{
+      let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+30);
+      if(mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH) startGame(i);
+    });
+    let bw=140,bh=40,bx=width/2-70,by=height*0.92;
+    if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh) SCREEN='TITLE';
+    return;
+  }
+  // GAME
+  // 戻るボタン
+  let bw=130,bh=30,bx=14,by=height-46;
+  if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ SCREEN='STAGE_SELECT'; return; }
+
+  if(S==='RESULT'){ initRound(); return; }
+  if(S==='STAGE_CLEAR'||S==='STAGE_FAIL'){ SCREEN='STAGE_SELECT'; return; }
+  if(S!=='AIM') return;
+
+  let dx=mouseX-g.x, dy=mouseY-(g.y+GLASS_H/2);
+  if(sqrt(dx*dx+dy*dy)<52){ dragging=true; dStartX=mouseX; dStartY=mouseY; }
+}
+
+function mouseReleased(){
+  // タイトルグラス射出
+  if(SCREEN==='TITLE' && titleDragging){
+    titleDragging=false;
+    let ddx=mouseX-tdStartX, ddy=mouseY-tdStartY;
+    let d=sqrt(ddx*ddx+ddy*ddy);
+    if(d>=MIN_DRAG){
+      let spd=constrain(d,MIN_DRAG,MAX_DRAG);
+      let speed=map(spd,MIN_DRAG,MAX_DRAG,1.2,MAX_SPEED);
+      titleGlass.vx=-(ddx/d)*speed;
+      titleGlass.vy=-(ddy/d)*speed;
+      titleGlass.active=true;
+    }
+    return;
+  }
+  if(!dragging||S!=='AIM') return;
+  dragging=false;
+  let ddx=mouseX-dStartX, ddy=mouseY-dStartY;
+  let d=sqrt(ddx*ddx+ddy*ddy);
+  if(d<MIN_DRAG) return;
+  let spd=constrain(d,MIN_DRAG,MAX_DRAG);
+  let speed=map(spd,MIN_DRAG,MAX_DRAG,1.2,MAX_SPEED);
+
+  // 引き方向の逆ベクトルで射出（ループ・通常共通）
+  g.vx=-(ddx/d)*speed;
+  g.vy=-(ddy/d)*speed;
+
+  if(loopMode){
+    // ループモードでも上向きなら空中へ
+    if(g.vy<-1.5){
+      g.airborne=true;
+    } else {
+      // 水平発射→パス追従に変換
+      let horizComp=-(ddx/d);
+      pathSpeed=horizComp*speed*0.38;
+      g.vx=0; g.vy=0;
+    }
+  } else {
+    g.airborne=g.vy<-1.5;
+    if(!g.airborne) g.vy=0;
+  }
+  S='SLIDE';
+}
+
+function windowResized(){ resizeCanvas(windowWidth,windowHeight); makeStars(); if(loopMode&&SCREEN==='GAME') buildLoopPath(); }
+function drawCursor(){ push(); noFill(); stroke(255,255,255,170); strokeWeight(1.5); circle(mouseX,mouseY,18); stroke(255,215,0,200); strokeWeight(1); point(mouseX,mouseY); pop(); }
+</script></body></html>
