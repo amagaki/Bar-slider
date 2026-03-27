@@ -7,6 +7,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
   <style>
     *{margin:0;padding:0;box-sizing:border-box;}
+    html{
+      height:100vh;
+      height:100dvh;
+      overflow:hidden;
+    }
     body{
       background:#050110;
       overflow:hidden;
@@ -15,20 +20,20 @@
       justify-content:center;
       width:100vw;
       height:100vh;
+      height:100dvh;   /* dvh: iOS SafariのURLバー対応 */
       cursor:none;
     }
-    /* 16:9固定キャンバス：vw/vhで画面にフィット・中央配置 */
+    /* 16:9固定キャンバス
+       ・PCでは最大960x540にキャップ
+       ・それ以下の画面では画面にフィット */
     canvas{
       display:block;
-      /* vh fallback（古いブラウザ・PC） */
-      width:  min(100vw,  calc(100vh  * 16 / 9)) !important;
-      height: min(100vh,  calc(100vw  *  9 / 16)) !important;
-      /* dvh（iOS Safari URLバー対応） */
-      width:  min(100vw,  calc(100dvh * 16 / 9)) !important;
-      height: min(100dvh, calc(100vw  *  9 / 16)) !important;
-      max-width:  100vw;
-      max-height: 100vh;
-      max-height: 100dvh;
+      /* vh fallback（古いブラウザ・PC用） */
+      width:  min(100vw,  calc(100vh  * 16 / 9), 960px) !important;
+      height: min(100vh,  calc(100vw  *  9 / 16), 540px) !important;
+      /* dvh上書き（iOS Safari URLバー対応） */
+      width:  min(100vw,  calc(100dvh * 16 / 9), 960px) !important;
+      height: min(100dvh, calc(100vw  *  9 / 16), 540px) !important;
     }
     /* スマホ縦向き警告 */
     #portrait-warning{
@@ -59,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v0.90
+// BAR SLIDER v0.91
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -214,7 +219,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[100,100,100], hitR:150 },
-    { txt:'v0.90  prototype', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v0.91  prototype', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
