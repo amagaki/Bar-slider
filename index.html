@@ -159,6 +159,7 @@ function buildLoopPath(){
 // P5 SETUP / DRAW
 // ================================================================
 function setup(){
+  pixelDensity(1);  // Retinaでのぼやけ防止
   createCanvas(GAME_W, GAME_H);
   textAlign(CENTER,CENTER);
   makeStars();
@@ -234,10 +235,10 @@ function drawShelfBottles(){
 
 function updateShelfBottles(){
   shelfBottles.forEach(b=>{
-    if(b.on) return;
+    if(b.on || b.alpha<=0) return;
     b.x+=b.vx; b.y+=b.vy;
     b.vy+=0.5; b.vx*=0.97; b.angle+=b.va;
-    b.alpha=max(0, b.alpha-3.5);
+    b.alpha=max(0, b.alpha-6);  // 速めにフェード
   });
 }
 
@@ -251,8 +252,8 @@ function checkShelfBottleHits(){
       b.vx=g.vx*0.5+sgn(g.vx)*random(1,4);
       b.vy=-random(3,8); b.va=random(-0.18,0.18);
       g.vx*=0.88; g.vy*=0.75;
-      shakeAmt=4;
-      spawnParts(b.x,b.baseY-b.h/2,color(b.col[0],b.col[1],b.col[2]),10);
+      shakeAmt=3;
+      spawnParts(b.x,b.baseY-b.h/2,color(b.col[0],b.col[1],b.col[2]),5); // パーティクル削減
     }
   });
 }
@@ -302,7 +303,7 @@ function drawTitleScreen(){
     drawArrow(titleGlass.x,titleGlass.y,titleGlass.x-ddx*0.8,titleGlass.y-ddy*0.8);
     noFill(); stroke(255,215,0,80); strokeWeight(1.5); circle(titleGlass.x,titleGlass.y,d*0.72);
     fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(13); textStyle(BOLD);
-    text(floor(pct*100)+'%',mouseX+28,mouseY-18); textStyle(NORMAL);
+    text(floor(pct*100)+'%', titleGlass.x, titleGlass.y - 28); textStyle(NORMAL);
   }
 
   // START ボタン
@@ -311,7 +312,7 @@ function drawTitleScreen(){
   // ヒント
   fill(100,100,100); noStroke(); textSize(10);
   text('グラスを引っ張って遊べるよ',GAME_W/2,GAME_H*0.62);
-  fill(80,80,80); textSize(10); text('v0.6  prototype',GAME_W/2,GAME_H-18);
+  fill(80,80,80); textSize(10); text('v0.7  prototype',GAME_W/2,GAME_H-18);
 }
 
 function drawAnimGlass(x,y,angle=0){
@@ -536,10 +537,19 @@ function drawCustomers(){
   custs.forEach((c,i)=>{
     let isTarget=i===targetIdx, sy=stageSY(c.x);
     push(); translate(c.x,sy-8);
-    if(isTarget&&S==='AIM'){ fill(255,215,0,38+sin(frameCount*0.1)*18); noStroke(); ellipse(0,-48,58,18); fill(255,215,0,190); textSize(10); text('オーダー！',0,-49); }
+    // 体
     fill(isTarget?color(75,52,128):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
-    fill(210,170,130); ellipse(0,-56,24,26); textSize(14); noStroke(); text(c.face,0,-56);
-    fill(165,165,165); textSize(9); text(c.name,0,-76); pop();
+    // 頭・顔
+    fill(210,170,130); ellipse(0,-56,24,26);
+    textSize(14); noStroke(); text(c.face,0,-56);
+    // 名前
+    fill(165,165,165); textSize(9); text(c.name,0,-76);
+    // オーダーバッジ（名前の上）
+    if(isTarget&&S==='AIM'){
+      fill(255,215,0,38+sin(frameCount*0.1)*18); noStroke(); ellipse(0,-92,58,16);
+      fill(255,215,0,200); textSize(9); textStyle(BOLD); text('オーダー！',0,-92); textStyle(NORMAL);
+    }
+    pop();
   });
 }
 
@@ -606,8 +616,12 @@ function drawGlass(){
     drawArrow(g.x,g.y+GLASS_H/2,tx,ty);
     noFill(); stroke(255,215,0,80); strokeWeight(1.5); circle(g.x,g.y+GLASS_H/2,dist*1.1);
     stroke(255,215,0,45); strokeWeight(1); circle(g.x,g.y+GLASS_H/2,MAX_DRAG*0.5*1.1);
-    fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(14); textStyle(BOLD); text(floor(pct*100)+'%',mouseX+28,mouseY-20); textStyle(NORMAL);
-    if(pct>=1.9){ fill(255,45,45,170+sin(frameCount*0.3)*60); textSize(11); text('MAX!',mouseX+28,mouseY-4); }
+    // %表示をグラスの上に固定（タッチ時に指で隠れない・画面外に出ない）
+    let dispPct=floor(pct*100);
+    fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(14); textStyle(BOLD);
+    text(dispPct+'%', g.x, g.y - 28);
+    textStyle(NORMAL);
+    if(pct>=1.9){ fill(255,45,45,170+sin(frameCount*0.3)*60); textSize(11); text('MAX!', g.x, g.y-44); }
   }
 }
 
@@ -733,19 +747,23 @@ function physicsStepLoop(){
     travelDist+=abs(g.vx)+abs(g.vy);
     g.angle+=g.vx*0.018;
     if(g.x<COUNTER_L-40||g.x>counterRight()+60||g.y>GAME_H+60){ finishRound(); return; }
-    // パス上のどこかに着地したか探す
-    let landed=false;
-    for(let i=0;i<stagePath.length-1;i++){
-      let px=stagePath[i].x, py=stagePath[i].y;
-      if(abs(g.x-px)<8 && g.y>=py-GLASS_H && g.vy>0){
-        // 着地：パス追従モードに切り替え
-        pathT=i; pathSpeed=g.vx*0.28;
-        g.y=py-GLASS_H; g.vx=0; g.vy=0; g.airborne=false;
-        shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),8);
-        landed=true; break;
+    // パス上への着地：線形スキャンを廃止→X座標からインデックスを直接計算
+    if(loopMode && stagePath.length>0){
+      let pathStep=3; // buildLoopPathのstep値
+      let approxIdx=floor((g.x - stagePath[0].x) / pathStep);
+      approxIdx=constrain(approxIdx, 0, stagePath.length-2);
+      // 前後5点だけチェック
+      let lo=max(0,approxIdx-5), hi=min(stagePath.length-1,approxIdx+5);
+      for(let i=lo;i<=hi;i++){
+        let px=stagePath[i].x, py=stagePath[i].y;
+        if(abs(g.x-px)<10 && g.y>=py-GLASS_H && g.vy>0){
+          pathT=i; pathSpeed=g.vx*0.28;
+          g.y=py-GLASS_H; g.vx=0; g.vy=0; g.airborne=false;
+          shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6);
+          return;
+        }
       }
     }
-    if(landed) return;
     obs.forEach(o=>{ if(o.on&&dist(g.x,g.y,o.x,o.y)<22) hitObs(o); });
     return;
   }
