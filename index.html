@@ -17,14 +17,18 @@
       height:100vh;
       cursor:none;
     }
-    /* 16:9固定キャンバス：ビューポートに収まるようCSSでスケール */
+    /* 16:9固定キャンバス：vw/vhで画面にフィット・中央配置 */
     canvas{
       display:block;
-      max-width:100vw !important;
-      max-height:100vh !important;
-      width:auto !important;
-      height:auto !important;
-      aspect-ratio:16/9;
+      /* vh fallback（古いブラウザ・PC） */
+      width:  min(100vw,  calc(100vh  * 16 / 9)) !important;
+      height: min(100vh,  calc(100vw  *  9 / 16)) !important;
+      /* dvh（iOS Safari URLバー対応） */
+      width:  min(100vw,  calc(100dvh * 16 / 9)) !important;
+      height: min(100dvh, calc(100vw  *  9 / 16)) !important;
+      max-width:  100vw;
+      max-height: 100vh;
+      max-height: 100dvh;
     }
     /* スマホ縦向き警告 */
     #portrait-warning{
@@ -55,7 +59,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v0.7
+// BAR SLIDER v0.90
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -74,10 +78,13 @@ let shelfBottles=[];   // 棚のボトル（壊せる）
 let dragging=false, dStartX=0, dStartY=0;
 let travelDist=0, parts=[], shakeAmt=0;
 let resultMsg='';
+let vxHistory=[];  // 平均速度判定用（直近フレームのvx履歴）
 let bgStars=[], titleAnim=0, hoverStage=-1;
 // タイトル画面グラス射出
 let titleGlass={x:0,y:0,vx:0,vy:0,active:false,gone:false};
 let titleDragging=false, tdStartX=0, tdStartY=0;
+// タイトル画面：吹っ飛ばせる文字オブジェクト
+let titleWords=[];
 
 // ---- ループステージ用パス変数 ----
 let stagePath=[];       // [{x,y}] パス配列（ループステージで使用）
@@ -159,10 +166,11 @@ function buildLoopPath(){
 // P5 SETUP / DRAW
 // ================================================================
 function setup(){
-  pixelDensity(1);  // Retinaでのぼやけ防止
+  pixelDensity(1);
   createCanvas(GAME_W, GAME_H);
   textAlign(CENTER,CENTER);
   makeStars();
+  initTitleWords();
   initShelfBottles();
 }
 
@@ -172,7 +180,7 @@ function draw(){
   background(5,1,16);
   titleAnim+=0.016;
 
-  if(SCREEN==='TITLE'){ drawBgAtmosphere(); drawTitleScreen(); updateTitleGlass(); }
+  if(SCREEN==='TITLE'){ drawBgAtmosphere(); drawTitleScreen(); updateTitleGlass(); drawParticles(); particleStep(); }
   else if(SCREEN==='STAGE_SELECT'){ drawBgAtmosphere(); drawStageSelect(); }
   else {
     drawBgAtmosphere(); drawBottleShelf(); drawCounter();
@@ -190,6 +198,87 @@ function draw(){
 // ATMOSPHERE / STARS
 // ================================================================
 function makeStars(){ bgStars=[]; for(let i=0;i<90;i++) bgStars.push({x:random(GAME_W),y:random(GAME_H*0.55),r:random(0.5,2.2),phase:random(TWO_PI)}); }
+
+// ================================================================
+// TITLE WORDS（吹っ飛ばせる文字オブジェクト）
+// ================================================================
+function initTitleWords(){
+  titleWords=[
+    // kind: 'neon' | 'text' | 'button_label'
+    // hitR: 当たり判定半径
+    { txt:'BAR SLIDER',       x:GAME_W/2, y:GAME_H*0.30, vx:0,vy:0,va:0, angle:0, alive:true,
+      kind:'neon', sz:72, col:[255,120,0], hitR:140 },
+    { txt:'〜 グラスを滑らせろ、バーテン伝説 〜', x:GAME_W/2, y:GAME_H*0.42, vx:0,vy:0,va:0, angle:0, alive:true,
+      kind:'italic', sz:18, col:[210,170,100], hitR:260 },
+    { txt:'PLAY START',       x:GAME_W/2, y:GAME_H*0.68+26, vx:0,vy:0,va:0, angle:0, alive:true,
+      kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
+    { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
+      kind:'small', sz:10, col:[100,100,100], hitR:150 },
+    { txt:'v0.90  prototype', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+      kind:'small', sz:10, col:[80,80,80], hitR:80 },
+  ];
+}
+
+function updateTitleWords(){
+  titleWords.forEach(w=>{
+    if(!w.alive) return;
+    // グラスとの当たり判定
+    let gx=titleGlass.x, gy=titleGlass.y;
+    if(titleGlass.active || titleGlass.gone) return;  // 飛翔中は判定済みで処理しない
+    // ↑飛翔中も当たり判定したいので修正
+  });
+}
+
+function checkTitleWordHits(){
+  if(!titleGlass.active) return;
+  titleWords.forEach(w=>{
+    if(!w.alive) return;
+    let dx=titleGlass.x-w.x, dy=titleGlass.y-w.y;
+    let d=sqrt(dx*dx+dy*dy);
+    if(d < w.hitR){
+      w.alive=false;
+      // 衝突方向に吹っ飛ぶ（グラスの速度ベースで）
+      let nx=dx/max(d,1), ny=dy/max(d,1);
+      w.vx = titleGlass.vx*0.6 + nx*random(3,8);
+      w.vy = titleGlass.vy*0.4 - random(2,7);
+      w.va = random(-0.06, 0.06);
+      // パーティクル
+      for(let i=0;i<8;i++) parts.push({
+        x:w.x+random(-20,20), y:w.y+random(-10,10),
+        c:color(w.col[0],w.col[1],w.col[2]),
+        vx:random(-5,5), vy:random(-6,0),
+        r:random(2,4), alpha:200
+      });
+    }
+  });
+}
+
+function drawAndUpdateTitleWords(pulse){
+  titleWords.forEach(w=>{
+    if(!w.alive){
+      // 飛翔中の物理更新
+      w.vy+=GRAVITY*0.6; w.vx*=0.99; w.x+=w.vx; w.y+=w.vy; w.angle+=w.va;
+      if(w.y>GAME_H+60) return; // 画面外は描画スキップ
+    }
+    push();
+    translate(w.x, w.y);
+    rotate(w.angle);
+    if(w.kind==='neon'){
+      // ネオン描画（生きている間はpulse付き）
+      let a=w.alive?pulse:0.6;
+      for(let i=7;i>0;i--){ fill(w.col[0],w.col[1],w.col[2],i*16*a); noStroke(); textSize(w.sz+i*0.8); text(w.txt,0,0); }
+    } else if(w.kind==='italic'){
+      fill(w.col[0],w.col[1],w.col[2], w.alive?(180+sin(titleAnim)*40):160);
+      noStroke(); textStyle(ITALIC); textSize(w.sz); text(w.txt,0,0); textStyle(NORMAL);
+    } else if(w.kind==='button_label'){
+      fill(w.col[0],w.col[1],w.col[2], w.alive?200:180);
+      noStroke(); textStyle(BOLD); textSize(w.sz); text(w.txt,0,0); textStyle(NORMAL);
+    } else {
+      fill(w.col[0],w.col[1],w.col[2]); noStroke(); textSize(w.sz); text(w.txt,0,0);
+    }
+    pop();
+  });
+}
 
 // ================================================================
 // SHELF BOTTLES（壊せる棚ボトル）
@@ -251,9 +340,9 @@ function checkShelfBottleHits(){
       b.on=false;
       b.vx=g.vx*0.5+sgn(g.vx)*random(1,4);
       b.vy=-random(3,8); b.va=random(-0.18,0.18);
-      g.vx*=0.88; g.vy*=0.75;
+      g.vx*=0.97; g.vy*=0.94;  // 減衰最小化（空中の自由度優先）
       shakeAmt=3;
-      spawnParts(b.x,b.baseY-b.h/2,color(b.col[0],b.col[1],b.col[2]),5); // パーティクル削減
+      spawnParts(b.x,b.baseY-b.h/2,color(b.col[0],b.col[1],b.col[2]),5);
     }
   });
 }
@@ -279,9 +368,9 @@ function neonText(txt,x,y,sz,col,a=1.0){
 // ================================================================
 function drawTitleScreen(){
   let pulse=sin(titleAnim*1.2)*0.3+0.7;
-  neonText('BAR SLIDER',GAME_W/2,GAME_H*0.30,72,[255,120,0],pulse);
-  fill(210,170,100,180+sin(titleAnim)*40); noStroke(); textStyle(ITALIC); textSize(18);
-  text('〜 グラスを滑らせろ、バーテン伝説 〜',GAME_W/2,GAME_H*0.42); textStyle(NORMAL);
+
+  // 文字オブジェクトを描画・物理更新
+  drawAndUpdateTitleWords(pulse);
 
   // タイトルグラス（射出済みなら追従、未射出ならアニメ位置）
   if(!titleGlass.active && !titleGlass.gone){
@@ -306,13 +395,14 @@ function drawTitleScreen(){
     text(floor(pct*100)+'%', titleGlass.x, titleGlass.y - 28); textStyle(NORMAL);
   }
 
-  // START ボタン
+  // PLAY START ボタン枠だけ描画（ラベルはwordオブジェクトが担当）
   let bw=240,bh=52,bx=GAME_W/2-120,by=GAME_H*0.68;
-  drawButton(bx,by,bw,bh,'PLAY START',mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh,[255,180,0]);
-  // ヒント
-  fill(100,100,100); noStroke(); textSize(10);
-  text('グラスを引っ張って遊べるよ',GAME_W/2,GAME_H*0.62);
-  fill(80,80,80); textSize(10); text('v0.7  prototype',GAME_W/2,GAME_H-18);
+  let hovBtn=mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh;
+  push();
+  if(hovBtn){ fill(255,180,0,38); noStroke(); rect(bx-4,by-4,bw+8,bh+8,14); }
+  stroke(255,180,0, hovBtn?230:150); strokeWeight(hovBtn?2.5:1.5);
+  fill(255,180,0, hovBtn?32:16); rect(bx,by,bw,bh,10);
+  pop();
 }
 
 function drawAnimGlass(x,y,angle=0){
@@ -329,9 +419,13 @@ function updateTitleGlass(){
   titleGlass.vy+=GRAVITY; titleGlass.vx*=AIR_FRICTION;
   titleGlass.x+=titleGlass.vx; titleGlass.y+=titleGlass.vy;
   titleGlass.angle=(titleGlass.angle||0)+titleGlass.vx*0.025;
+
+  // 文字との当たり判定
+  checkTitleWordHits();
+
   if(titleGlass.y>GAME_H+60 || titleGlass.x<-100 || titleGlass.x>GAME_W+100){
     titleGlass.gone=true; titleGlass.active=false;
-    // 3秒後にリセット
+    // 2秒後にグラスだけリセット（文字は復活しない）
     setTimeout(()=>{ titleGlass={x:0,y:0,vx:0,vy:0,active:false,gone:false,angle:0}; },2000);
   }
 }
@@ -413,9 +507,9 @@ function initRound(){
   if(loopMode){
     let cx=W*0.50, R=min(GAME_H*0.185,110);
     obs=[
-      {type:'ashtray', x:cx-R-80,  y:0,vx:0,vy:0,va:0,angle:0,on:true},
-      {type:'bottle',  x:cx+R+70,  y:0,vx:0,vy:0,va:0,angle:0,on:true},
-      {type:'nuts',    x:cx+R+170, y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'ashtray', x:cx-R-160, y:0,vx:0,vy:0,va:0,angle:0,on:true},  // ループ手前左
+      {type:'nuts',    x:cx-R-30,  y:0,vx:0,vy:0,va:0,angle:0,on:true},  // ループ直前
+      {type:'bottle',  x:cx+R+200, y:0,vx:0,vy:0,va:0,angle:0,on:true},  // ループ出口から遠め
     ];
     obs.forEach(o=>{ o.y=stageSY(o.x)-obstH(o.type); });
   } else {
@@ -430,7 +524,7 @@ function initRound(){
   let cxs=[W*0.78,W*0.87,W*0.95], names=['おじさん','姉ちゃん','おっちゃん'];
   custs=cxs.map((cx,i)=>({x:cx,name:names[i],y:stageSY(cx),face:'😐'}));
   targetIdx=floor(random(custs.length));
-  dragging=false; parts=[]; resultMsg='';
+  dragging=false; parts=[]; resultMsg=''; vxHistory=[];
   initShelfBottles();
   S='AIM';
 }
@@ -625,16 +719,28 @@ function drawGlass(){
   }
 }
 
-// 着地ゾーン判定: 最も近い客を選ぶ・速度閾値を厳しく（甘め判定はゾーン幅で対応）
-const DELIVER_SPEED=2.8;   // この速度以下で「止まった」とみなす
-const ZONE_HIT=ZONE_W+14;  // 判定幅は表示より少し広め（バカゲー判定）
+// 着地ゾーン判定
+const DELIVER_SPEED=3.5;   // 全客共通の許容速度（バカゲー判定）
+const ZONE_HIT=ZONE_W+14;  // 判定幅（表示より少し広め）
+const VX_HIST=5;
+
+function trackVx(){
+  let v=loopMode?abs(pathSpeed):abs(g.vx);
+  vxHistory.push(v);
+  if(vxHistory.length>VX_HIST) vxHistory.shift();
+}
+
+function avgSpeed(){
+  if(vxHistory.length===0) return loopMode?abs(pathSpeed):abs(g.vx);
+  return vxHistory.reduce((a,b)=>a+b,0)/vxHistory.length;
+}
 
 function findHitCustomer(){
-  // ZONE内の客のうち最もX距離が近い一人を返す
+  let spd=avgSpeed();
   let best=-1, bestDist=Infinity;
   custs.forEach((c,i)=>{
     let d=abs(g.x-c.x);
-    if(d<ZONE_HIT && d<bestDist){ bestDist=d; best=i; }
+    if(d<ZONE_HIT && spd<DELIVER_SPEED && d<bestDist){ bestDist=d; best=i; }
   });
   return best;
 }
@@ -707,14 +813,19 @@ function physicsStep(){
     g.x+=g.vx; g.y+=g.vy;
     travelDist+=abs(g.vx)+abs(g.vy);
     g.angle+=g.vx*0.018;
+    trackVx();
     let CR=counterRight();
     if(g.x<COUNTER_L-40||g.x>CR+60||g.y>GAME_H+60){ finishRound(); return; }
+    // サブステップ着地判定（速度が大きい時に突き抜け防止）
     let surf=stageSY(g.x)-GLASS_H;
-    if(g.y>=surf&&g.vy>0){ g.y=surf; g.vy=0; g.vx*=0.70; g.airborne=false; shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),8); }
+    if(g.y>=surf&&g.vy>0){
+      g.y=surf; g.vy=0; g.vx*=0.75; g.airborne=false;
+      shakeAmt=4; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6);
+    }
     obs.forEach(o=>{ if(o.on&&abs(g.x-o.x)<22&&abs(g.y-o.y)<22) hitObs(o); });
     if(travelDist>60){
       let hit=findHitCustomer();
-      if(hit>=0 && abs(g.vx)<DELIVER_SPEED){ deliverTo(hit); return; }
+      if(hit>=0){ deliverTo(hit); return; }
     }
   } else {
     let slope=stageSY(g.x+1)-stageSY(g.x);
@@ -722,10 +833,11 @@ function physicsStep(){
     g.x+=g.vx; g.y=stageSY(g.x)-GLASS_H;
     travelDist+=abs(g.vx);
     g.angle=lerp(g.angle,-g.vx*0.024,0.12);
+    trackVx();
     obs.forEach(o=>{ if(o.on&&abs(g.x-o.x)<20) hitObs(o); });
     if(travelDist>60){
       let hit=findHitCustomer();
-      if(hit>=0 && abs(g.vx)<DELIVER_SPEED){ deliverTo(hit); return; }
+      if(hit>=0){ deliverTo(hit); return; }
     }
     let CR=counterRight();
     if(g.x>CR+10) finishRound();
@@ -740,23 +852,20 @@ function physicsStep(){
 function physicsStepLoop(){
   if(g.done) return;
 
-  // 空中中はフリー物理（通常と同じ）
+  // 空中中はフリー物理
   if(g.airborne){
     g.vy+=GRAVITY; g.vx*=AIR_FRICTION;
     g.x+=g.vx; g.y+=g.vy;
     travelDist+=abs(g.vx)+abs(g.vy);
     g.angle+=g.vx*0.018;
     if(g.x<COUNTER_L-40||g.x>counterRight()+60||g.y>GAME_H+60){ finishRound(); return; }
-    // パス上への着地：線形スキャンを廃止→X座標からインデックスを直接計算
-    if(loopMode && stagePath.length>0){
-      let pathStep=3; // buildLoopPathのstep値
-      let approxIdx=floor((g.x - stagePath[0].x) / pathStep);
-      approxIdx=constrain(approxIdx, 0, stagePath.length-2);
-      // 前後5点だけチェック
-      let lo=max(0,approxIdx-5), hi=min(stagePath.length-1,approxIdx+5);
-      for(let i=lo;i<=hi;i++){
+
+    // パス着地判定：完全全点スキャン（v6オリジナル）
+    // ループ面にも着地可能・g.vy>0（落下中）のみ判定
+    if(stagePath.length>0){
+      for(let i=0; i<stagePath.length-1; i++){
         let px=stagePath[i].x, py=stagePath[i].y;
-        if(abs(g.x-px)<10 && g.y>=py-GLASS_H && g.vy>0){
+        if(abs(g.x-px)<8 && g.y>=py-GLASS_H && g.vy>0){
           pathT=i; pathSpeed=g.vx*0.28;
           g.y=py-GLASS_H; g.vx=0; g.vy=0; g.airborne=false;
           shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6);
@@ -764,18 +873,16 @@ function physicsStepLoop(){
         }
       }
     }
+
     obs.forEach(o=>{ if(o.on&&dist(g.x,g.y,o.x,o.y)<22) hitObs(o); });
     return;
   }
+
+  // パス追従物理
   let n=stagePath.length;
   let iCurr=floor(constrain(pathT,0,n-2));
   let iNext=min(iCurr+1,n-1);
 
-  // 重力：次のパス点との高さ差で加速減速
-  let dh=stagePath[iCurr].y - stagePath[iNext].y; // 正=次が上=減速
-  // 実際のエネルギーは dy に比例
-  // dy > 0 (next is higher up on screen = lower y = uphill) → decelerate
-  // In screen coords: stagePath[iNext].y < stagePath[iCurr].y means going up → decelerate
   let slopeDelta=(stagePath[iNext].y - stagePath[iCurr].y) * SLOPE_FACTOR * 0.6;
   pathSpeed+=slopeDelta;
   pathSpeed*=FRICTION;
@@ -783,31 +890,26 @@ function physicsStepLoop(){
   pathT+=pathSpeed;
   pathT=constrain(pathT,0,n-1);
   travelDist+=abs(pathSpeed);
+  trackVx();
 
   let idx=floor(constrain(pathT,0,n-2));
   g.x=stagePath[idx].x;
   g.y=stagePath[idx].y-GLASS_H;
 
-  // グラスの傾き：パス接線に合わせる
   let i2=min(idx+1,n-1);
   let dx2=stagePath[i2].x-stagePath[idx].x;
   let dy2=stagePath[i2].y-stagePath[idx].y;
   g.angle=lerp(g.angle,atan2(dy2,dx2),0.18);
 
-  // 障害物チェック
   obs.forEach(o=>{ if(o.on&&dist(g.x,g.y+GLASS_H/2,o.x,o.y)<22) hitObs(o); });
 
-  // ゾーン内判定（右フラット通過後）
   if(pathT>loopExitIdx+10){
     let hit=findHitCustomer();
-    if(hit>=0 && abs(pathSpeed)<DELIVER_SPEED){ deliverTo(hit); return; }
+    if(hit>=0){ deliverTo(hit); return; }
   }
 
-  // 終端
   if(pathT>=n-3){ finishRound(); return; }
-  // ループ前で失速（逆走して戻ってきた）
   if(pathT<=2&&pathSpeed<0){ resultMsg='😵 失速して戻った！'; roundOver(); return; }
-  // 停止
   if(abs(pathSpeed)<0.25&&travelDist>30){ finishRound(); return; }
 }
 
@@ -819,11 +921,12 @@ function hitObs(o){
   let spd=loopMode?pathSpeed:g.vx;
   o.vx=spd*0.65+sgn(spd)*random(2,5);
   o.vy=-random(5,10); o.va=random(-0.17,0.17);
-  if(loopMode) pathSpeed*=0.72+random(-0.06,0.06);
-  else g.vx*=0.72+random(-0.06,0.06);
-  shakeAmt=7;
+  // 減衰を大幅に緩和（アドバイザー指摘：力の総量が足りなくなっていた）
+  if(loopMode) pathSpeed*=0.97+random(-0.01,0.01);
+  else g.vx*=0.97+random(-0.01,0.01);
+  shakeAmt=6;
   let pc=o.type==='bottle'?color(38,155,55):o.type==='ashtray'?color(155,150,135):color(170,125,55);
-  spawnParts(o.x,o.y,pc,15);
+  spawnParts(o.x,o.y,pc,12);
 }
 
 function deliverTo(idx){
