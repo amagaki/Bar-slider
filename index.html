@@ -64,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.016
+// BAR SLIDER v1.1
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -78,7 +78,9 @@ let S='AIM';
 // ---- ゲーム変数 ----
 let score=0, currentStage=0;
 let roundsCleared=0, roundsNeeded=2;
-let throwCount=0;  // 今ステージの投げた回数
+let throwCount=0;
+let gameMode='single';   // 'single' | 'endless'
+let streakCount=0;       // 連続モード：連続成功数
 let g={}, obs=[], custs=[], targetIdx=0;
 let shelfBottles=[];   // 棚のボトル（壊せる）
 let dragging=false, dStartX=0, dStartY=0;
@@ -367,16 +369,16 @@ let loopExitIdx=0;      // ループ終了インデックス
 // STAGE DEFINITIONS
 // ================================================================
 const STAGES=[
-  { id:0, name:'ストレート',    sub:'まずは基本から',    emoji:'🍺', cleared:false, isLoop:false, bestRecord:null,
+  { id:0, name:'ストレート',    sub:'まずは基本から',    emoji:'🍺', cleared:false, isLoop:false, bestRecord:null, bestEndlessRecord:null,
     sY(x){ let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1); return GAME_H*0.62-sin(t*PI)*10; }
   },
-  { id:1, name:'ダウンヒル',    sub:'スピード注意！',    emoji:'🎿', cleared:false, isLoop:false, bestRecord:null,
+  { id:1, name:'ダウンヒル',    sub:'スピード注意！',    emoji:'🎿', cleared:false, isLoop:false, bestRecord:null, bestEndlessRecord:null,
     sY(x){ let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1); return GAME_H*0.50+t*GAME_H*0.22; }
   },
-  { id:2, name:'マウンテン',    sub:'山を越えろ',        emoji:'⛰️', cleared:false, isLoop:false, bestRecord:null,
+  { id:2, name:'マウンテン',    sub:'山を越えろ',        emoji:'⛰️', cleared:false, isLoop:false, bestRecord:null, bestEndlessRecord:null,
     sY(x){ let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1); return GAME_H*0.65-sin(t*PI)*140; }
   },
-  { id:3, name:'段差クロス',    sub:'斜面を越えて届けろ', emoji:'🦘', cleared:false, isLoop:false, bestRecord:null,
+  { id:3, name:'段差クロス',    sub:'斜面を越えて届けろ', emoji:'🦘', cleared:false, isLoop:false, bestRecord:null, bestEndlessRecord:null,
     sY(x){
       let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1);
       let base=GAME_H*0.62-t*GAME_H*0.06;
@@ -386,10 +388,10 @@ const STAGES=[
       return base+drop;
     }
   },
-  { id:4, name:'Wウェーブ',     sub:'波に乗れ',          emoji:'🌊', cleared:false, isLoop:false, bestRecord:null,
+  { id:4, name:'Wウェーブ',     sub:'波に乗れ',          emoji:'🌊', cleared:false, isLoop:false, bestRecord:null, bestEndlessRecord:null,
     sY(x){ let t=constrain((x-COUNTER_L)/(counterRight()-COUNTER_L),0,1); return GAME_H*0.62-sin(t*PI*2)*80+sin(t*PI)*20; }
   },
-  { id:5, name:'ループ・ザ・ループ', sub:'円形レールを突破せよ', emoji:'🎢', cleared:false, isLoop:true, bestRecord:null,
+  { id:5, name:'ループ・ザ・ループ', sub:'円形レールを突破せよ', emoji:'🎢', cleared:false, isLoop:true, bestRecord:null, bestEndlessRecord:null,
     sY(x){ return GAME_H*0.65; }   // フラット（customer配置用）
   },
 ];
@@ -453,7 +455,8 @@ function saveRecords(){
   try{
     let data=STAGES.map(st=>({
       cleared:st.cleared,
-      bestRecord:st.bestRecord
+      bestRecord:st.bestRecord,           // 単一モードベスト
+      bestEndlessRecord:st.bestEndlessRecord  // 連続モードベスト
     }));
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   }catch(e){}
@@ -468,6 +471,7 @@ function loadRecords(){
       if(STAGES[i]){
         STAGES[i].cleared=d.cleared||false;
         STAGES[i].bestRecord=d.bestRecord||null;
+        STAGES[i].bestEndlessRecord=d.bestEndlessRecord||null;
       }
     });
   }catch(e){}
@@ -475,7 +479,7 @@ function loadRecords(){
 
 function clearRecords(){
   try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
-  STAGES.forEach(st=>{ st.cleared=false; st.bestRecord=null; });
+  STAGES.forEach(st=>{ st.cleared=false; st.bestRecord=null; st.bestEndlessRecord=null; });
 }
 
 function draw(){
@@ -518,7 +522,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[100,100,100], hitR:150 },
-    { txt:'v1.016', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.1', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -772,15 +776,19 @@ function drawStageSelect(){
   let bw=140,bh=40,bx=GAME_W/2-70,by=GAME_H*0.92;
   drawButton(bx,by,bw,bh,'← タイトル',mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh,[150,150,150]);
 
-  // 連続モードボタン（左下、将来実装用）
+  // 連続モードボタン（左下）
   let mbw=130,mbh=30,mbx=14,mby=GAME_H*0.925;
   let mhov=mouseX>mbx&&mouseX<mbx+mbw&&mouseY>mby&&mouseY<mby+mbh;
+  let modeIsEndless=gameMode==='endless';
   push();
-  stroke(80,80,120,mhov?160:80); strokeWeight(1.5);
-  fill(20,20,40,mhov?120:70); rect(mbx,mby,mbw,mbh,8);
-  fill(120,120,180,mhov?200:130); noStroke(); textSize(11); textStyle(BOLD);
+  stroke(modeIsEndless?100:80, modeIsEndless?200:80, modeIsEndless?255:120, mhov?200:140);
+  strokeWeight(modeIsEndless?2:1.5);
+  fill(modeIsEndless?color(10,30,60):color(20,20,40), mhov?140:80);
+  rect(mbx,mby,mbw,mbh,8);
+  fill(modeIsEndless?color(100,200,255):color(150,150,200), mhov?240:180);
+  noStroke(); textSize(11); textStyle(BOLD);
   textAlign(CENTER,CENTER);
-  text('連続モード (準備中)', mbx+mbw/2, mby+mbh/2);
+  text(modeIsEndless?'● 連続モード中':'○ 連続モード', mbx+mbw/2, mby+mbh/2);
   textStyle(NORMAL); pop();
 
   // SE音量スライダー（右下）
@@ -893,14 +901,11 @@ function drawStageCard(x,y,w,h,st,hov){
   fill(12,10,28,200); rect(x,y,w,h,10);
 
   if(st.cleared && st.bestRecord){
-    // 左上：CLEARバッジ
     noStroke(); textAlign(LEFT,TOP); textStyle(BOLD);
     fill(100,230,100,230); textSize(10);
     text('✓ CLEAR', x+6, y+5);
-    // モード表記「単」
     fill(180,215,255,200); textSize(9); textStyle(NORMAL);
     text('単', x+6, y+20);
-    // スコアと投げ数（大きく）
     fill(255,215,0,220); textSize(12); textStyle(BOLD);
     text(st.bestRecord.score+'pt', x+6, y+32);
     fill(160,200,160,200); textSize(11); textStyle(NORMAL);
@@ -909,6 +914,19 @@ function drawStageCard(x,y,w,h,st,hov){
     noStroke(); textAlign(LEFT,TOP); textStyle(BOLD);
     fill(100,230,100,230); textSize(10);
     text('✓ CLEAR', x+6, y+5);
+  }
+  // 連続モードベスト（右上）
+  if(st.bestEndlessRecord){
+    let br=st.bestEndlessRecord;
+    noStroke(); textAlign(RIGHT,TOP); textStyle(NORMAL);
+    fill(100,200,255,180); textSize(8);
+    text('連', x+w-6, y+6);
+    fill(255,180,60,200); textSize(10); textStyle(BOLD);
+    text(br.streak+'連', x+w-6, y+18);
+    fill(200,200,100,180); textSize(8); textStyle(NORMAL);
+    text(br.score+'pt', x+w-6, y+32);
+    fill(150,190,150,160); textSize(8);
+    text(br.throws+'投', x+w-6, y+44);
   }
   textAlign(CENTER,CENTER); textStyle(NORMAL);
 
@@ -924,7 +942,7 @@ function drawStageCard(x,y,w,h,st,hov){
 // GAME INIT
 // ================================================================
 function startGame(idx){
-  currentStage=idx; roundsCleared=0; score=0; throwCount=0;
+  currentStage=idx; roundsCleared=0; score=0; throwCount=0; streakCount=0;
   loopMode=STAGES[idx].isLoop;
   if(loopMode) buildLoopPath();
   SCREEN='GAME'; initRound();
@@ -1240,6 +1258,20 @@ function drawGameHUD(){
   text(st.emoji+' '+st.name, 18, 14); textStyle(NORMAL);
   fill(255,255,255); textSize(15); text('SCORE  '+score, 18, 36);
   fill(180,180,180); textSize(12); text(throwCount+'投目', 18, 56);
+  // モード表示
+  fill(gameMode==='endless'?color(100,200,255):color(160,160,160)); textSize(11);
+  text(gameMode==='endless'?'🔄 連続モード':'📍 単一モード', 18, 72);
+
+  textAlign(RIGHT,TOP);
+  if(gameMode==='endless'){
+    fill(255,180,60); textSize(15); textStyle(BOLD);
+    text('連続 '+streakCount+'回', GAME_W-18, 14); textStyle(NORMAL);
+    fill(180,180,180); textSize(11); text('2回成功でクリアなし', GAME_W-18, 36);
+  } else {
+    let hearts=''; for(let i=0;i<roundsCleared;i++) hearts+='🍺';
+    fill(255,215,0); textSize(16); textStyle(BOLD); text(hearts||'―', GAME_W-18, 14); textStyle(NORMAL);
+    fill(180,180,180); textSize(12); text('あと'+(roundsNeeded-roundsCleared)+'回成功でクリア', GAME_W-18, 36);
+  }
 
   textAlign(RIGHT,TOP);
   let hearts=''; for(let i=0;i<roundsCleared;i++) hearts+='🍺';
@@ -1269,10 +1301,14 @@ function drawGameHUD(){
 
 function drawOverlay(){
   if(S==='RESULT'){
-    fill(0,0,0,160); noStroke(); rect(GAME_W/2-240,GAME_H/2-65,480,130,14);
-    fill(255,215,0); textSize(26); textStyle(BOLD); text(resultMsg,GAME_W/2,GAME_H/2-16); textStyle(NORMAL);
+    fill(0,0,0,160); noStroke(); rect(GAME_W/2-260,GAME_H/2-65,520,130,14);
+    fill(255,215,0); textSize(22); textStyle(BOLD); text(resultMsg,GAME_W/2,GAME_H/2-16); textStyle(NORMAL);
     fill(175,175,175); textSize(12);
-    text('成功: '+roundsCleared+'/'+roundsNeeded+'  |  クリックで続ける',GAME_W/2,GAME_H/2+28);
+    if(gameMode==='endless'){
+      text('連続 '+streakCount+'回成功  |  SCORE '+score+'  |  クリックで続ける',GAME_W/2,GAME_H/2+28);
+    } else {
+      text('成功: '+roundsCleared+'/'+roundsNeeded+'  |  クリックで続ける',GAME_W/2,GAME_H/2+28);
+    }
   }
   if(S==='STAGE_CLEAR'){
     fill(0,0,0,175); noStroke(); rect(GAME_W/2-260,GAME_H/2-96,520,192,16);
@@ -1286,6 +1322,29 @@ function drawOverlay(){
     fill(255,100,100); textSize(32); textStyle(BOLD); text('💧 ステージ失敗…',GAME_W/2,GAME_H/2-28); textStyle(NORMAL);
     fill(255,215,0); textSize(18); text('SCORE: '+score,GAME_W/2,GAME_H/2+12);
     fill(175,175,175); textSize(13); text('クリックでステージ選択へ',GAME_W/2,GAME_H/2+44);
+  }
+  if(S==='ENDLESS_END'){
+    let st=STAGES[currentStage];
+    let isNew=st.bestEndlessRecord && st.bestEndlessRecord.throws===throwCount && st.bestEndlessRecord.score===score;
+    fill(0,0,0,185); noStroke(); rect(GAME_W/2-280,GAME_H/2-112,560,224,16);
+    // タイトル
+    fill(255,180,60); textSize(28); textStyle(BOLD); text('🍺 連続モード終了！',GAME_W/2,GAME_H/2-70); textStyle(NORMAL);
+    // 今回の記録
+    fill(255,255,255); textSize(16); textStyle(BOLD);
+    text('連続成功  '+streakCount+'回', GAME_W/2, GAME_H/2-32);
+    textStyle(NORMAL);
+    fill(255,215,0); textSize(15);
+    text('SCORE  '+score, GAME_W/2, GAME_H/2-8);
+    fill(180,200,180); textSize(13);
+    text(throwCount+'投', GAME_W/2, GAME_H/2+14);
+    // ベスト表示
+    if(st.bestEndlessRecord){
+      let br=st.bestEndlessRecord;
+      fill(isNew?color(100,255,150):color(150,150,150)); textSize(12);
+      text(isNew?'🆕 NEW RECORD！':'BEST: 連続'+br.streak+'回  '+br.score+'pt  '+br.throws+'投', GAME_W/2, GAME_H/2+38);
+    }
+    fill(175,175,175); textSize(13);
+    text('クリックでステージ選択へ', GAME_W/2, GAME_H/2+66);
   }
 }
 
@@ -1424,10 +1483,15 @@ function deliverTo(idx){
   g.done=true; g.vx=0; g.vy=0; g.angle=0; g.airborne=false; pathSpeed=0;
   if(idx===targetIdx){
     score+=1000; roundsCleared++;
-    resultMsg='🍺 ナイスサーブ！  +1000';
     custs[idx].face='😄'; spawnParts(g.x,g.y,color(255,215,0),28); shakeAmt=3;
     playDeliver();
     spawnFloatingText(g.x, g.y-30, '+1000', [255,215,0]);
+    if(gameMode==='endless'){
+      streakCount++;
+      resultMsg='🍺 ナイスサーブ！  +1000  (連続 '+streakCount+'回！)';
+    } else {
+      resultMsg='🍺 ナイスサーブ！  +1000';
+    }
   } else {
     resultMsg='😅 違う人に届いた！';
     custs[idx].face='😲'; custs[targetIdx].face='😤';
@@ -1438,14 +1502,14 @@ function deliverTo(idx){
 function finishRound(){
   if(g.done) return;
   if(loopMode){
-    if(g.airborne && g.y>height)              resultMsg='🌊 床に落ちた！';
+    if(g.airborne && g.y>GAME_H)              resultMsg='🌊 床に落ちた！';
     else if(g.airborne && g.x>counterRight()) resultMsg='🥊 端から落ちた！';
     else if(g.airborne && g.x<COUNTER_L-40)  resultMsg='↩️ 手元に戻った！';
     else if(pathT>=stagePath.length-3)        resultMsg='🥊 端から飛び出た！';
     else if(abs(pathSpeed)<0.25)              resultMsg='😬 途中で止まった…';
     else                                       resultMsg='😬 届かなかった…';
   } else {
-    if(g.y>height)             resultMsg='🌊 床に落ちた！';
+    if(g.y>GAME_H)              resultMsg='🌊 床に落ちた！';
     else if(g.x>counterRight()) resultMsg='🥊 端から落ちた！';
     else if(g.x<COUNTER_L+30)  resultMsg='↩️ 手元に戻った！';
     else                         resultMsg='😬 届かなかった…';
@@ -1455,29 +1519,57 @@ function finishRound(){
   checkStageEnd();
 }
 
-function roundOver(){   // 失速専用
+function roundOver(){
   g.done=true; g.vx=0; g.vy=0; pathSpeed=0;
   custs[targetIdx].face='😤';
+  resultMsg='😵 失速して戻った！';
   checkStageEnd();
 }
 
 function checkStageEnd(){
+  if(gameMode==='endless'){
+    // 成功かどうかは resultMsg で判断（配達成功なら続行、それ以外は終了）
+    let succeeded = resultMsg.includes('ナイスサーブ');
+    if(succeeded){
+      S='RESULT'; // 成功 → 続行（クリックで次ラウンド）
+    } else {
+      endlessEnd(); // 失敗 → 終了
+    }
+    return;
+  }
+  // 単一モード
   if(roundsCleared>=roundsNeeded){
     let st=STAGES[currentStage];
     st.cleared=true;
-    // 単一モード：投げ数が少ない方が優先、同数ならスコアが高い方
     let isNewRecord=false;
     if(!st.bestRecord){
       isNewRecord=true;
     } else {
       let fewer = throwCount < st.bestRecord.throws;
-      let sameThrowsHigherScore = throwCount === st.bestRecord.throws && score > st.bestRecord.score;
-      if(fewer || sameThrowsHigherScore) isNewRecord=true;
+      let sameThrowsHigherScore = throwCount===st.bestRecord.throws && score>st.bestRecord.score;
+      if(fewer||sameThrowsHigherScore) isNewRecord=true;
     }
     if(isNewRecord) st.bestRecord={score:score, throws:throwCount};
     saveRecords();
     S='STAGE_CLEAR'; playStageClear();
   } else S='RESULT';
+}
+
+function endlessEnd(){
+  // 連続モードベストレコード更新
+  // 投げ数（throwCount）が多い方優先、同数ならスコア高い方
+  let st=STAGES[currentStage];
+  let isNew=false;
+  if(!st.bestEndlessRecord){
+    isNew=true;
+  } else {
+    let more = throwCount > st.bestEndlessRecord.throws;
+    let sameTHigher = throwCount===st.bestEndlessRecord.throws && score>st.bestEndlessRecord.score;
+    if(more||sameTHigher) isNew=true;
+  }
+  if(isNew) st.bestEndlessRecord={score:score, throws:throwCount, streak:streakCount};
+  saveRecords();
+  S='ENDLESS_END';
 }
 
 function obstacleStep(){ obs.forEach(o=>{ if(o.on)return; o.x+=o.vx; o.y+=o.vy; o.vy+=0.44; o.vx*=0.98; o.angle+=o.va; }); }
@@ -1517,7 +1609,13 @@ function mousePressed(){
   }
   if(SCREEN==='STAGE_SELECT'){
     if(volSliderPress()) return;
-    if(resetPress()) return;  // リセットボタン優先
+    if(resetPress()) return;
+    // 連続モードボタン
+    let mbw=130,mbh=30,mbx=14,mby=GAME_H*0.925;
+    if(mouseX>mbx&&mouseX<mbx+mbw&&mouseY>mby&&mouseY<mby+mbh){
+      gameMode=gameMode==='single'?'endless':'single';
+      playButton(); return;
+    }
     let cols=3,cardW=min(GAME_W*0.28,240),cardH=cardW*0.62,gapX=(width-cardW*cols)/(cols+1),startY=GAME_H*0.20;
     STAGES.forEach((st,i)=>{
       let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+30);
@@ -1532,8 +1630,16 @@ function mousePressed(){
   let bw=130,bh=30,bx=14,by=GAME_H-46;
   if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); SCREEN='STAGE_SELECT'; return; }
 
-  if(S==='RESULT'){ initRound(); return; }
-  if(S==='STAGE_CLEAR'||S==='STAGE_FAIL'){ playButton(); SCREEN='STAGE_SELECT'; return; }
+  if(S==='RESULT'){
+    if(gameMode==='endless'){
+      // 連続モードのRESULTは成功時のみ（失敗はENDLESS_ENDへ行っている）
+      initRound();
+    } else {
+      initRound();
+    }
+    return;
+  }
+  if(S==='STAGE_CLEAR'||S==='STAGE_FAIL'||S==='ENDLESS_END'){ playButton(); SCREEN='STAGE_SELECT'; return; }
   if(S!=='AIM') return;
 
   let dx=mouseX-g.x, dy=mouseY-(g.y+GLASS_H/2);
