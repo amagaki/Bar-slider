@@ -64,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.1
+// BAR SLIDER v1.12
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -522,7 +522,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[100,100,100], hitR:150 },
-    { txt:'v1.1', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.12', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -901,40 +901,40 @@ function drawStageCard(x,y,w,h,st,hov){
   fill(12,10,28,200); rect(x,y,w,h,10);
 
   if(st.cleared && st.bestRecord){
-    noStroke(); textAlign(LEFT,TOP); textStyle(BOLD);
-    fill(100,230,100,230); textSize(10);
+    noStroke(); textAlign(LEFT,TOP);
+    // ✓ CLEAR
+    fill(100,230,100,230); textStyle(BOLD); textSize(11);
     text('✓ CLEAR', x+6, y+5);
-    fill(180,215,255,200); textSize(9); textStyle(NORMAL);
+    // 単・〇投・○○pt の順
+    fill(180,215,255,210); textSize(10); textStyle(BOLD);
     text('単', x+6, y+20);
-    fill(255,215,0,220); textSize(12); textStyle(BOLD);
-    text(st.bestRecord.score+'pt', x+6, y+32);
-    fill(160,200,160,200); textSize(11); textStyle(NORMAL);
-    text(st.bestRecord.throws+'投', x+6, y+47);
+    fill(160,200,160,210); textSize(13); textStyle(NORMAL);
+    text(st.bestRecord.throws+'投', x+6, y+34);
+    fill(255,215,0,230); textSize(14); textStyle(BOLD);
+    text(st.bestRecord.score+'pt', x+6, y+50);
   } else if(st.cleared){
     noStroke(); textAlign(LEFT,TOP); textStyle(BOLD);
-    fill(100,230,100,230); textSize(10);
+    fill(100,230,100,230); textSize(11);
     text('✓ CLEAR', x+6, y+5);
   }
-  // 連続モードベスト（右上）
+  // 連続モードベスト（右上）：〇投は不要・ptはsingleと同色
   if(st.bestEndlessRecord){
     let br=st.bestEndlessRecord;
-    noStroke(); textAlign(RIGHT,TOP); textStyle(NORMAL);
-    fill(100,200,255,180); textSize(8);
-    text('連', x+w-6, y+6);
-    fill(255,180,60,200); textSize(10); textStyle(BOLD);
-    text(br.streak+'連', x+w-6, y+18);
-    fill(200,200,100,180); textSize(8); textStyle(NORMAL);
-    text(br.score+'pt', x+w-6, y+32);
-    fill(150,190,150,160); textSize(8);
-    text(br.throws+'投', x+w-6, y+44);
+    noStroke(); textAlign(RIGHT,TOP);
+    fill(100,200,255,210); textSize(10); textStyle(BOLD);
+    text('連', x+w-6, y+20);
+    fill(160,200,160,210); textSize(13); textStyle(NORMAL);
+    text(br.streak+'連', x+w-6, y+34);
+    fill(255,215,0,230); textSize(14); textStyle(BOLD);
+    text(br.score+'pt', x+w-6, y+50);
   }
   textAlign(CENTER,CENTER); textStyle(NORMAL);
 
   // 絵文字・ステージ名・説明
-  noStroke(); textSize(26); text(st.emoji, x+w/2, y+h*0.40);
+  noStroke(); textSize(24); text(st.emoji, x+w/2, y+h*0.48);
   fill(hov?color(255,220,80):color(220,220,255)); textStyle(BOLD); textSize(hov?16:14);
-  text(st.name, x+w/2, y+h*0.66); textStyle(NORMAL);
-  fill(150,150,170); textSize(10); text(st.sub, x+w/2, y+h*0.83);
+  text(st.name, x+w/2, y+h*0.70); textStyle(NORMAL);
+  fill(150,150,170); textSize(10); text(st.sub, x+w/2, y+h*0.86);
   pop();
 }
 
@@ -1202,12 +1202,13 @@ function drawGlass(){
 }
 
 // 着地ゾーン判定
-const DELIVER_SPEED=3.5;   // 全客共通の許容速度（バカゲー判定）
+const DELIVER_SPEED=7.0;   // 全客共通の許容速度（バカゲー判定）
 const ZONE_HIT=ZONE_W+14;  // 判定幅（表示より少し広め）
 const VX_HIST=5;
 
 function trackVx(){
-  let v=loopMode?abs(pathSpeed):abs(g.vx);
+  // ループはpathSpeedをピクセル換算（1パス点≒3px）して通常ステージと単位を統一
+  let v=loopMode ? abs(pathSpeed)*3 : abs(g.vx);
   vxHistory.push(v);
   if(vxHistory.length>VX_HIST) vxHistory.shift();
 }
