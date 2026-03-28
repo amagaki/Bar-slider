@@ -64,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.34
+// BAR SLIDER v1.36
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -530,7 +530,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.34', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.36', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -1086,11 +1086,11 @@ function resetPress(){
   if(mouseX<RST_X||mouseX>RST_X+RST_W||mouseY<RST_Y||mouseY>RST_Y+RST_H) return false;
   if(!resetConfirm){
     resetConfirm=true;
-    resetConfirmTimer=180;  // 3秒間確認状態
+    resetConfirmTimer=180;
   } else {
     // 確定リセット
-    STAGES.forEach(st=>{ st.cleared=false; st.bestRecord=null; });
-    clearRecords();
+    clearRecords();           // STAGES全フィールドリセット＋localStorage削除
+    initStageWords();         // 表示用wordオブジェクトを再生成（即時反映）
     resetConfirm=false; resetConfirmTimer=0;
     playButton();
   }
@@ -1578,11 +1578,6 @@ function drawGameHUD(){
     fill(255,215,0); textSize(16); textStyle(BOLD); text(hearts||'―', GAME_W-18, 14); textStyle(NORMAL);
     fill(180,180,180); textSize(12); text('あと'+(roundsNeeded-roundsCleared)+'回成功でクリア', GAME_W-18, 36);
   }
-
-  textAlign(RIGHT,TOP);
-  let hearts=''; for(let i=0;i<roundsCleared;i++) hearts+='🍺';
-  fill(255,215,0); textSize(16); textStyle(BOLD); text(hearts||'―', GAME_W-18, 14); textStyle(NORMAL);
-  fill(180,180,180); textSize(12); text('あと'+(roundsNeeded-roundsCleared)+'回成功でクリア', GAME_W-18, 36);
 
   textAlign(CENTER,CENTER);
   if(S==='AIM'){
