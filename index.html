@@ -64,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v0.91
+// BAR SLIDER v1.011
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -84,6 +84,207 @@ let dragging=false, dStartX=0, dStartY=0;
 let travelDist=0, parts=[], shakeAmt=0;
 let resultMsg='';
 let vxHistory=[];  // 平均速度判定用（直近フレームのvx履歴）
+// ================================================================
+// AUDIO SYSTEM v2（Web Audio API）
+// ================================================================
+let audioCtx=null;
+let seVolume=0.6;  // 0.0〜1.0 スライダーで制御
+
+function getACtx(){
+  if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  return audioCtx;
+}
+function masterOut(gain=0.3){
+  let ac=getACtx(), g=ac.createGain();
+  g.gain.value=gain*seVolume;
+  g.connect(ac.destination);
+  return g;
+}
+
+// ---------------------------------------------------------------
+// チャージ音：澄んだ鈴の音（ベル系） 3段階
+// tier 1=低め, 2=中, 3=高（200%到達時）
+// ---------------------------------------------------------------
+function playCharge(tier){
+  let ac=getACtx(), out=masterOut(0.32);
+  let baseFreqs=[660, 990, 1480]; // E5, B5, F#6
+  let f=baseFreqs[constrain(tier-1,0,2)];
+  let dur=[0.22, 0.28, 0.38][tier-1];
+
+  // メイン正弦波（鈴の基音）
+  let osc=ac.createOscillator(), env=ac.createGain();
+  osc.type='sine'; osc.frequency.value=f;
+  env.gain.setValueAtTime(0, ac.currentTime);
+  env.gain.linearRampToValueAtTime(0.8, ac.currentTime+0.005);
+  env.gain.exponentialRampToValueAtTime(0.001, ac.currentTime+dur);
+  osc.connect(env); env.connect(out);
+  osc.start(); osc.stop(ac.currentTime+dur+0.05);
+
+  // 2倍音（ベルらしい輝き）
+  let osc2=ac.createOscillator(), env2=ac.createGain();
+  osc2.type='sine'; osc2.frequency.value=f*2.76; // ベルの特徴的な倍音比
+  env2.gain.setValueAtTime(0, ac.currentTime);
+  env2.gain.linearRampToValueAtTime(0.35, ac.currentTime+0.004);
+  env2.gain.exponentialRampToValueAtTime(0.001, ac.currentTime+dur*0.6);
+  osc2.connect(env2); env2.connect(out);
+  osc2.start(); osc2.stop(ac.currentTime+dur);
+
+  // tier3（200%）は追加の高音フラッシュ
+  if(tier===3){
+    let osc3=ac.createOscillator(), env3=ac.createGain();
+    osc3.type='sine'; osc3.frequency.value=f*4;
+    env3.gain.setValueAtTime(0, ac.currentTime);
+    env3.gain.linearRampToValueAtTime(0.25, ac.currentTime+0.003);
+    env3.gain.exponentialRampToValueAtTime(0.001, ac.currentTime+0.12);
+    osc3.connect(env3); env3.connect(out);
+    osc3.start(); osc3.stop(ac.currentTime+0.14);
+  }
+}
+
+// ---------------------------------------------------------------
+// 発射音：スライド感のあるウッと滑る音
+// pct: 0-200
+// ---------------------------------------------------------------
+function playLaunch(pct){
+  let ac=getACtx(), out=masterOut(0.28);
+  let t=ac.currentTime;
+  let tier=pct<67?1:pct<134?2:3;
+  let dur=[0.10, 0.15, 0.22][tier-1];
+  let vol=[0.55, 0.75, 1.0][tier-1];
+
+  // 木材を滑る低〜中域のこすれ音（バンドパスノイズ）
+  let bufLen=Math.floor(ac.sampleRate*dur);
+  let buf=ac.createBuffer(1, bufLen, ac.sampleRate);
+  let d=buf.getChannelData(0);
+  // ピンクノイズ的に生成
+  let b0=0,b1=0,b2=0;
+  for(let i=0;i<bufLen;i++){
+    let wh=Math.random()*2-1;
+    b0=0.99886*b0+wh*0.0555179;
+    b1=0.99332*b1+wh*0.0750759;
+    b2=0.96900*b2+wh*0.1538520;
+    d[i]=(b0+b1+b2)*0.11;
+  }
+  let src=ac.createBufferSource(); src.buffer=buf;
+  // 中域バンドパス（木のこすれ音域）
+  let bp=ac.createBiquadFilter();
+  bp.type='bandpass';
+  bp.frequency.setValueAtTime(600, t);
+  bp.frequency.exponentialRampToValueAtTime(200, t+dur);
+  bp.Q.value=1.5;
+  let nenv=ac.createGain();
+  nenv.gain.setValueAtTime(vol, t);
+  nenv.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  src.connect(bp); bp.connect(nenv); nenv.connect(out);
+  src.start(t); src.stop(t+dur+0.01);
+
+  // 初速の「カッ」感（短い高域トランジェント）
+  let osc=ac.createOscillator(), oenv=ac.createGain();
+  osc.type='triangle'; osc.frequency.value=1200;
+  oenv.gain.setValueAtTime(vol*0.4, t);
+  oenv.gain.exponentialRampToValueAtTime(0.001, t+0.03);
+  osc.connect(oenv); oenv.connect(out);
+  osc.start(t); osc.stop(t+0.04);
+}
+
+// ---------------------------------------------------------------
+// 障害物・棚ボトルヒット音：ガシャン！破壊感
+// ---------------------------------------------------------------
+function playObstacleHit(isShelf=false){
+  let ac=getACtx(), out=masterOut(isShelf?0.22:0.30);
+  let t=ac.currentTime;
+
+  // 1. 鋭い打撃トランジェント（カン！）
+  let osc=ac.createOscillator(), env=ac.createGain();
+  osc.type='square';
+  osc.frequency.setValueAtTime(isShelf?1600:1100, t);
+  osc.frequency.exponentialRampToValueAtTime(isShelf?400:200, t+0.06);
+  env.gain.setValueAtTime(1.0, t);
+  env.gain.exponentialRampToValueAtTime(0.001, t+0.07);
+  osc.connect(env); env.connect(out);
+  osc.start(t); osc.stop(t+0.08);
+
+  // 2. 破片が散る音（高域ノイズバースト）
+  let bufLen=Math.floor(ac.sampleRate*0.12);
+  let buf=ac.createBuffer(1, bufLen, ac.sampleRate);
+  let nd=buf.getChannelData(0);
+  for(let i=0;i<bufLen;i++) nd[i]=(Math.random()*2-1);
+  let nsrc=ac.createBufferSource(); nsrc.buffer=buf;
+  let nhp=ac.createBiquadFilter(); nhp.type='highpass';
+  nhp.frequency.value=isShelf?3500:2800;
+  let nenv=ac.createGain();
+  nenv.gain.setValueAtTime(0.8, t);
+  nenv.gain.linearRampToValueAtTime(1.0, t+0.008);
+  nenv.gain.exponentialRampToValueAtTime(0.001, t+0.12);
+  nsrc.connect(nhp); nhp.connect(nenv); nenv.connect(out);
+  nsrc.start(t); nsrc.stop(t+0.13);
+
+  // 3. ローエンドの「ドン」（重さの表現）
+  if(!isShelf){
+    let osc2=ac.createOscillator(), env2=ac.createGain();
+    osc2.type='sine'; osc2.frequency.value=80;
+    env2.gain.setValueAtTime(0.7, t);
+    env2.gain.exponentialRampToValueAtTime(0.001, t+0.08);
+    osc2.connect(env2); env2.connect(out);
+    osc2.start(t); osc2.stop(t+0.10);
+  }
+}
+
+// ---------------------------------------------------------------
+// 着地音：グラスが木に当たる「コッ」
+// ---------------------------------------------------------------
+function playLand(){
+  let ac=getACtx(), out=masterOut(0.22);
+  let t=ac.currentTime;
+
+  // 木のボディヒット感（低め・短め）
+  let osc=ac.createOscillator(), env=ac.createGain();
+  osc.type='triangle';
+  osc.frequency.setValueAtTime(420, t);
+  osc.frequency.exponentialRampToValueAtTime(180, t+0.04);
+  env.gain.setValueAtTime(0.9, t);
+  env.gain.exponentialRampToValueAtTime(0.001, t+0.06);
+  osc.connect(env); env.connect(out);
+  osc.start(t); osc.stop(t+0.07);
+
+  // グラスの微細な振動音（高域の余韻）
+  let osc2=ac.createOscillator(), env2=ac.createGain();
+  osc2.type='sine'; osc2.frequency.value=2400;
+  env2.gain.setValueAtTime(0.15, t+0.005);
+  env2.gain.exponentialRampToValueAtTime(0.001, t+0.10);
+  osc2.connect(env2); env2.connect(out);
+  osc2.start(t+0.005); osc2.stop(t+0.12);
+}
+
+// ---------------------------------------------------------------
+// ステージクリア（変更なし）
+// ---------------------------------------------------------------
+function playStageClear(){
+  let ac=getACtx(), out=masterOut(0.20);
+  let notes=[1047,1319,1568,2093];
+  notes.forEach((f,i)=>{
+    let t=ac.currentTime+i*0.11;
+    let osc=ac.createOscillator(), env=ac.createGain();
+    osc.type='sine'; osc.frequency.value=f;
+    env.gain.setValueAtTime(0,t);
+    env.gain.linearRampToValueAtTime(0.55,t+0.015);
+    env.gain.exponentialRampToValueAtTime(0.001,t+0.38);
+    osc.connect(env); env.connect(out);
+    osc.start(t); osc.stop(t+0.4);
+    let osc2=ac.createOscillator(), env2=ac.createGain();
+    osc2.type='sine'; osc2.frequency.value=f*2;
+    env2.gain.setValueAtTime(0,t);
+    env2.gain.linearRampToValueAtTime(0.18,t+0.010);
+    env2.gain.exponentialRampToValueAtTime(0.001,t+0.20);
+    osc2.connect(env2); env2.connect(out);
+    osc2.start(t); osc2.stop(t+0.22);
+  });
+}
+
+// チャージ段階追跡
+let lastChargeTier=0;
+
 let bgStars=[], titleAnim=0, hoverStage=-1;
 // タイトル画面グラス射出
 let titleGlass={x:0,y:0,vx:0,vy:0,active:false,gone:false};
@@ -186,7 +387,7 @@ function draw(){
   titleAnim+=0.016;
 
   if(SCREEN==='TITLE'){ drawBgAtmosphere(); drawTitleScreen(); updateTitleGlass(); drawParticles(); particleStep(); }
-  else if(SCREEN==='STAGE_SELECT'){ drawBgAtmosphere(); drawStageSelect(); }
+  else if(SCREEN==='STAGE_SELECT'){ drawBgAtmosphere(); drawStageSelect(); updateVolumeSlider(); }
   else {
     drawBgAtmosphere(); drawBottleShelf(); drawCounter();
     drawBarDetails(); drawTargetZone(); drawCustomers();
@@ -219,7 +420,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[100,100,100], hitR:150 },
-    { txt:'v0.91  prototype', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.011', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -348,6 +549,7 @@ function checkShelfBottleHits(){
       g.vx*=0.97; g.vy*=0.94;  // 減衰最小化（空中の自由度優先）
       shakeAmt=3;
       spawnParts(b.x,b.baseY-b.h/2,color(b.col[0],b.col[1],b.col[2]),5);
+      playObstacleHit(true);  // 棚ボトルヒット音
     }
   });
 }
@@ -461,6 +663,60 @@ function drawStageSelect(){
   });
   let bw=140,bh=40,bx=GAME_W/2-70,by=GAME_H*0.92;
   drawButton(bx,by,bw,bh,'← タイトル',mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh,[150,150,150]);
+
+  // SE音量スライダー（右下）
+  drawVolumeSlider();
+}
+
+// ----------------------------------------------------------------
+// 音量スライダー
+// ----------------------------------------------------------------
+const VOL_X=GAME_W-110, VOL_Y=GAME_H*0.88, VOL_W=90, VOL_H=6;
+let volDragging=false;
+
+function drawVolumeSlider(){
+  let knobX=VOL_X+seVolume*VOL_W;
+  // ラベル
+  fill(160,160,160); noStroke(); textSize(10); textAlign(CENTER,CENTER);
+  text('SE 音量', VOL_X+VOL_W/2, VOL_Y-14);
+  // トラック背景
+  stroke(60,60,90); strokeWeight(2); noFill();
+  line(VOL_X, VOL_Y, VOL_X+VOL_W, VOL_Y);
+  // トラック前半（塗り）
+  stroke(100,180,255); strokeWeight(2);
+  line(VOL_X, VOL_Y, knobX, VOL_Y);
+  // ノブ
+  let hovKnob=dist(mouseX,mouseY,knobX,VOL_Y)<10;
+  fill(hovKnob||volDragging?color(150,210,255):color(100,180,255));
+  noStroke();
+  circle(knobX, VOL_Y, hovKnob||volDragging?14:10);
+  // 数値
+  fill(140,140,160); textSize(9);
+  text(floor(seVolume*100)+'%', VOL_X+VOL_W/2, VOL_Y+14);
+  textAlign(CENTER,CENTER);
+}
+
+function updateVolumeSlider(){
+  if(!volDragging) return;
+  seVolume=constrain((mouseX-VOL_X)/VOL_W, 0, 1);
+}
+
+function volSliderPress(){
+  if(SCREEN!=='STAGE_SELECT') return false;
+  let knobX=VOL_X+seVolume*VOL_W;
+  if(dist(mouseX,mouseY,knobX,VOL_Y)<14){ volDragging=true; return true; }
+  // トラック上クリックでもジャンプ
+  if(abs(mouseY-VOL_Y)<12 && mouseX>=VOL_X-5 && mouseX<=VOL_X+VOL_W+5){
+    seVolume=constrain((mouseX-VOL_X)/VOL_W,0,1);
+    volDragging=true;
+    playCharge(2);  // 設定音
+    return true;
+  }
+  return false;
+}
+
+function volSliderRelease(){
+  if(volDragging){ volDragging=false; playCharge(2); }  // 離した時にSEでフィードバック
 }
 
 function drawStageCard(x,y,w,h,st,hov){
@@ -715,12 +971,15 @@ function drawGlass(){
     drawArrow(g.x,g.y+GLASS_H/2,tx,ty);
     noFill(); stroke(255,215,0,80); strokeWeight(1.5); circle(g.x,g.y+GLASS_H/2,dist*1.1);
     stroke(255,215,0,45); strokeWeight(1); circle(g.x,g.y+GLASS_H/2,MAX_DRAG*0.5*1.1);
-    // %表示をグラスの上に固定（タッチ時に指で隠れない・画面外に出ない）
     let dispPct=floor(pct*100);
     fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(14); textStyle(BOLD);
     text(dispPct+'%', g.x, g.y - 28);
     textStyle(NORMAL);
     if(pct>=1.9){ fill(255,45,45,170+sin(frameCount*0.3)*60); textSize(11); text('MAX!', g.x, g.y-44); }
+    // チャージ音：67%・134%・200%の閾値を超えた瞬間に鳴らす
+    let tier=pct<0.67?0:pct<1.34?1:pct<1.98?2:3;
+    if(tier>0 && tier>lastChargeTier) playCharge(tier);
+    lastChargeTier=tier;
   }
 }
 
@@ -825,7 +1084,7 @@ function physicsStep(){
     let surf=stageSY(g.x)-GLASS_H;
     if(g.y>=surf&&g.vy>0){
       g.y=surf; g.vy=0; g.vx*=0.75; g.airborne=false;
-      shakeAmt=4; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6);
+      shakeAmt=4; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6); playLand();
     }
     obs.forEach(o=>{ if(o.on&&abs(g.x-o.x)<22&&abs(g.y-o.y)<22) hitObs(o); });
     if(travelDist>60){
@@ -873,7 +1132,7 @@ function physicsStepLoop(){
         if(abs(g.x-px)<8 && g.y>=py-GLASS_H && g.vy>0){
           pathT=i; pathSpeed=g.vx*0.28;
           g.y=py-GLASS_H; g.vx=0; g.vy=0; g.airborne=false;
-          shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6);
+          shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6); playLand();
           return;
         }
       }
@@ -926,12 +1185,12 @@ function hitObs(o){
   let spd=loopMode?pathSpeed:g.vx;
   o.vx=spd*0.65+sgn(spd)*random(2,5);
   o.vy=-random(5,10); o.va=random(-0.17,0.17);
-  // 減衰を大幅に緩和（アドバイザー指摘：力の総量が足りなくなっていた）
   if(loopMode) pathSpeed*=0.97+random(-0.01,0.01);
   else g.vx*=0.97+random(-0.01,0.01);
   shakeAmt=6;
   let pc=o.type==='bottle'?color(38,155,55):o.type==='ashtray'?color(155,150,135):color(170,125,55);
   spawnParts(o.x,o.y,pc,12);
+  playObstacleHit(false);  // カウンター障害物ヒット音
 }
 
 function deliverTo(idx){
@@ -975,7 +1234,7 @@ function roundOver(){   // 失速専用
 }
 
 function checkStageEnd(){
-  if(roundsCleared>=roundsNeeded){ STAGES[currentStage].cleared=true; S='STAGE_CLEAR'; }
+  if(roundsCleared>=roundsNeeded){ STAGES[currentStage].cleared=true; S='STAGE_CLEAR'; playStageClear(); }
   else S='RESULT';
 }
 
@@ -1015,6 +1274,7 @@ function mousePressed(){
     return;
   }
   if(SCREEN==='STAGE_SELECT'){
+    if(volSliderPress()) return;  // スライダー優先
     let cols=3,cardW=min(GAME_W*0.28,240),cardH=cardW*0.62,gapX=(width-cardW*cols)/(cols+1),startY=GAME_H*0.20;
     STAGES.forEach((st,i)=>{
       let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+30);
@@ -1038,6 +1298,7 @@ function mousePressed(){
 }
 
 function mouseReleased(){
+  volSliderRelease();  // 音量スライダーリリース
   // タイトルグラス射出
   if(SCREEN==='TITLE' && titleDragging){
     titleDragging=false;
@@ -1065,11 +1326,9 @@ function mouseReleased(){
   g.vy=-(ddy/d)*speed;
 
   if(loopMode){
-    // ループモードでも上向きなら空中へ
     if(g.vy<-1.5){
       g.airborne=true;
     } else {
-      // 水平発射→パス追従に変換
       let horizComp=-(ddx/d);
       pathSpeed=horizComp*speed*0.38;
       g.vx=0; g.vy=0;
@@ -1078,6 +1337,10 @@ function mouseReleased(){
     g.airborne=g.vy<-1.5;
     if(!g.airborne) g.vy=0;
   }
+  // 発射音（引っ張り量に応じて3段階）
+  let launchPct=map(spd,MIN_DRAG,MAX_DRAG,0,200);
+  playLaunch(launchPct);
+  lastChargeTier=0;  // チャージ段階リセット
   S='SLIDE';
 }
 
