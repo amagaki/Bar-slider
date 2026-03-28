@@ -64,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.12
+// BAR SLIDER v1.2
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -79,8 +79,10 @@ let S='AIM';
 let score=0, currentStage=0;
 let roundsCleared=0, roundsNeeded=2;
 let throwCount=0;
-let gameMode='single';   // 'single' | 'endless'
-let streakCount=0;       // 連続モード：連続成功数
+let gameMode='single';
+let streakCount=0;
+let lastDeliverySuccess=false;
+let endlessIsNewRecord=false;
 let g={}, obs=[], custs=[], targetIdx=0;
 let shelfBottles=[];   // 棚のボトル（壊せる）
 let dragging=false, dStartX=0, dStartY=0;
@@ -521,8 +523,8 @@ function initTitleWords(){
     { txt:'PLAY START',       x:GAME_W/2, y:GAME_H*0.68+26, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
-      kind:'small', sz:10, col:[100,100,100], hitR:150 },
-    { txt:'v1.12', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+      kind:'hint', sz:13, col:[200,180,80], hitR:150 },
+    { txt:'v1.2', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -571,7 +573,6 @@ function drawAndUpdateTitleWords(pulse){
     translate(w.x, w.y);
     rotate(w.angle);
     if(w.kind==='neon'){
-      // ネオン描画（生きている間はpulse付き）
       let a=w.alive?pulse:0.6;
       for(let i=7;i>0;i--){ fill(w.col[0],w.col[1],w.col[2],i*16*a); noStroke(); textSize(w.sz+i*0.8); text(w.txt,0,0); }
     } else if(w.kind==='italic'){
@@ -579,6 +580,10 @@ function drawAndUpdateTitleWords(pulse){
       noStroke(); textStyle(ITALIC); textSize(w.sz); text(w.txt,0,0); textStyle(NORMAL);
     } else if(w.kind==='button_label'){
       fill(w.col[0],w.col[1],w.col[2], w.alive?200:180);
+      noStroke(); textStyle(BOLD); textSize(w.sz); text(w.txt,0,0); textStyle(NORMAL);
+    } else if(w.kind==='hint'){
+      // ヒントテキスト：点滅なし・固定輝度
+      fill(w.col[0],w.col[1],w.col[2], w.alive?190:120);
       noStroke(); textStyle(BOLD); textSize(w.sz); text(w.txt,0,0); textStyle(NORMAL);
     } else {
       fill(w.col[0],w.col[1],w.col[2]); noStroke(); textSize(w.sz); text(w.txt,0,0);
@@ -661,7 +666,7 @@ function drawBgAtmosphere(){
   [{x:GAME_W*0.22,c:[255,80,20]},{x:GAME_W*0.50,c:[20,140,255]},{x:GAME_W*0.78,c:[160,255,80]}].forEach(gw=>{
     let gc=drawingContext.createRadialGradient(gw.x,40,5,gw.x,40,240);
     gc.addColorStop(0,`rgba(${gw.c[0]},${gw.c[1]},${gw.c[2]},0.15)`); gc.addColorStop(1,'rgba(0,0,0,0)');
-    drawingContext.fillStyle=gc; drawingContext.fillRect(0,0,width,GAME_H*0.6);
+    drawingContext.fillStyle=gc; drawingContext.fillRect(0,0,GAME_W,GAME_H*0.6);
   });
   noStroke();
   bgStars.forEach(s=>{ s.phase+=0.016; fill(255,255,240,75+sin(s.phase)*55); circle(s.x,s.y,s.r*2); });
@@ -760,41 +765,65 @@ let resetConfirm=false;   // スコアリセット確認フラグ
 let resetConfirmTimer=0; // 確認タイマー（フレーム数）
 
 function drawStageSelect(){
-  neonText('STAGE SELECT',GAME_W/2,GAME_H*0.10,36,[80,200,255],0.9);
-  let cols=3,cardW=min(GAME_W*0.28,240),cardH=cardW*0.62;
-  let gapX=(width-cardW*cols)/(cols+1), startY=GAME_H*0.20;
+  neonText('STAGE SELECT',GAME_W/2,GAME_H*0.08,34,[80,200,255],0.9);
+
+  // ================================================================
+  // モード切替タブ（下部・v1.13スタイル）
+  // ================================================================
+  let modeIsEndless=gameMode==='endless';
+  let tabW=160, tabH=32, tabY=GAME_H*0.895;
+  let tab1x=GAME_W/2-tabW-4, tab2x=GAME_W/2+4;
+
+  // 単一モードタブ
+  let hov1=mouseX>tab1x&&mouseX<tab1x+tabW&&mouseY>tabY&&mouseY<tabY+tabH;
+  push();
+  stroke(!modeIsEndless?color(255,215,0):color(100,100,140), !modeIsEndless?220:100);
+  strokeWeight(!modeIsEndless?2:1);
+  fill(!modeIsEndless?color(40,32,0):color(15,15,30), !modeIsEndless?200:100);
+  rect(tab1x,tabY,tabW,tabH, !modeIsEndless?[8,8,0,0]:[8,8,8,8]);
+  fill(!modeIsEndless?color(255,215,0):color(120,120,160), hov1?255:(!modeIsEndless?230:160));
+  noStroke(); textSize(13); textStyle(BOLD); textAlign(CENTER,CENTER);
+  text('📍 単一モード', tab1x+tabW/2, tabY+tabH/2);
+  textStyle(NORMAL); pop();
+
+  // 連続モードタブ
+  let hov2=mouseX>tab2x&&mouseX<tab2x+tabW&&mouseY>tabY&&mouseY<tabY+tabH;
+  push();
+  stroke(modeIsEndless?color(100,200,255):color(100,100,140), modeIsEndless?220:100);
+  strokeWeight(modeIsEndless?2:1);
+  fill(modeIsEndless?color(10,30,55):color(15,15,30), modeIsEndless?200:100);
+  rect(tab2x,tabY,tabW,tabH, modeIsEndless?[8,8,0,0]:[8,8,8,8]);
+  fill(modeIsEndless?color(100,200,255):color(120,120,160), hov2?255:(modeIsEndless?230:160));
+  noStroke(); textSize(13); textStyle(BOLD); textAlign(CENTER,CENTER);
+  text('🔄 連続モード', tab2x+tabW/2, tabY+tabH/2);
+  textStyle(NORMAL); pop();
+
+  // タブ下線
+  stroke(modeIsEndless?color(100,200,255):color(255,215,0)); strokeWeight(2); noFill();
+  line(tab1x, tabY+tabH, tab2x+tabW, tabY+tabH);
+
+  // ================================================================
+  // ステージカード
+  // ================================================================
+  let cols=3, cardW=min(GAME_W*0.28,240), cardH=cardW*0.62;
+  let gapX=(GAME_W-cardW*cols)/(cols+1), startY=GAME_H*0.215;
   hoverStage=-1;
   STAGES.forEach((st,i)=>{
     let col=i%cols, row=floor(i/cols);
-    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+30);
+    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+28);
     let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
     if(hov) hoverStage=i;
     drawStageCard(cx,cy,cardW,cardH,st,hov);
   });
 
-  // ← タイトルボタン（中央下）
-  let bw=140,bh=40,bx=GAME_W/2-70,by=GAME_H*0.92;
+  // ← タイトルボタン（左下）
+  let bw=120,bh=34,bx=18,by=GAME_H*0.895;
   drawButton(bx,by,bw,bh,'← タイトル',mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh,[150,150,150]);
-
-  // 連続モードボタン（左下）
-  let mbw=130,mbh=30,mbx=14,mby=GAME_H*0.925;
-  let mhov=mouseX>mbx&&mouseX<mbx+mbw&&mouseY>mby&&mouseY<mby+mbh;
-  let modeIsEndless=gameMode==='endless';
-  push();
-  stroke(modeIsEndless?100:80, modeIsEndless?200:80, modeIsEndless?255:120, mhov?200:140);
-  strokeWeight(modeIsEndless?2:1.5);
-  fill(modeIsEndless?color(10,30,60):color(20,20,40), mhov?140:80);
-  rect(mbx,mby,mbw,mbh,8);
-  fill(modeIsEndless?color(100,200,255):color(150,150,200), mhov?240:180);
-  noStroke(); textSize(11); textStyle(BOLD);
-  textAlign(CENTER,CENTER);
-  text(modeIsEndless?'● 連続モード中':'○ 連続モード', mbx+mbw/2, mby+mbh/2);
-  textStyle(NORMAL); pop();
 
   // SE音量スライダー（右下）
   drawVolumeSlider();
 
-  // スコアリセットボタン（音量スライダーの下）
+  // スコアリセットボタン（右上）
   drawResetButton();
 
   // リセット確認タイマー更新
@@ -807,7 +836,8 @@ function drawStageSelect(){
 // ----------------------------------------------------------------
 // スコアリセットボタン（音量スライダーの下）
 // ----------------------------------------------------------------
-const RST_X=GAME_W-115, RST_Y=GAME_H*0.916, RST_W=100, RST_H=28;
+// スコアリセットボタン（右上・STAGE SELECTと同じ高さ）
+const RST_X=GAME_W-118, RST_Y=GAME_H*0.065, RST_W=100, RST_H=28;
 
 function drawResetButton(){
   let hov=mouseX>RST_X&&mouseX<RST_X+RST_W&&mouseY>RST_Y&&mouseY<RST_Y+RST_H;
@@ -844,8 +874,8 @@ function resetPress(){
   }
   return true;
 }
-// SE音量スライダー（左下・連続モードボタンの右隣）
-const VOL_X=160, VOL_Y=GAME_H*0.935, VOL_W=110, VOL_H=6;
+// SE音量スライダー（右下・←タイトルと同じ高さ、リセットと同X）
+const VOL_X=GAME_W-118, VOL_Y=GAME_H*0.912, VOL_W=100, VOL_H=6;
 let volDragging=false;
 
 function drawVolumeSlider(){
@@ -902,31 +932,40 @@ function drawStageCard(x,y,w,h,st,hov){
 
   if(st.cleared && st.bestRecord){
     noStroke(); textAlign(LEFT,TOP);
-    // ✓ CLEAR
     fill(100,230,100,230); textStyle(BOLD); textSize(11);
     text('✓ CLEAR', x+6, y+5);
-    // 単・〇投・○○pt の順
-    fill(180,215,255,210); textSize(10); textStyle(BOLD);
+    fill(180,215,255,220); textSize(12); textStyle(BOLD);
     text('単', x+6, y+20);
-    fill(160,200,160,210); textSize(13); textStyle(NORMAL);
-    text(st.bestRecord.throws+'投', x+6, y+34);
+    fill(160,200,160,210); textSize(12); textStyle(NORMAL);
+    text(st.bestRecord.throws+'投', x+6, y+35);
     fill(255,215,0,230); textSize(14); textStyle(BOLD);
     text(st.bestRecord.score+'pt', x+6, y+50);
-  } else if(st.cleared){
-    noStroke(); textAlign(LEFT,TOP); textStyle(BOLD);
-    fill(100,230,100,230); textSize(11);
-    text('✓ CLEAR', x+6, y+5);
+  } else {
+    noStroke(); textAlign(LEFT,TOP);
+    if(st.cleared){ fill(100,230,100,230); textStyle(BOLD); textSize(11); text('✓ CLEAR', x+6, y+5); }
+    // 単ラベルは未スコアでも見やすく
+    fill(180,215,255,160); textSize(12); textStyle(BOLD);
+    text('単', x+6, y+20);
+    fill(160,200,160,110); textSize(11); textStyle(NORMAL);
+    text('---', x+6, y+35);
   }
-  // 連続モードベスト（右上）：〇投は不要・ptはsingleと同色
+  // 連続モードベスト（右上）
   if(st.bestEndlessRecord){
     let br=st.bestEndlessRecord;
     noStroke(); textAlign(RIGHT,TOP);
-    fill(100,200,255,210); textSize(10); textStyle(BOLD);
+    fill(100,200,255,220); textSize(12); textStyle(BOLD);
     text('連', x+w-6, y+20);
-    fill(160,200,160,210); textSize(13); textStyle(NORMAL);
+    fill(160,200,160,210); textSize(12); textStyle(NORMAL);
     text(br.streak+'連', x+w-6, y+34);
     fill(255,215,0,230); textSize(14); textStyle(BOLD);
     text(br.score+'pt', x+w-6, y+50);
+  } else {
+    noStroke(); textAlign(RIGHT,TOP);
+    // 連ラベルは未スコアでも見やすく
+    fill(100,200,255,160); textSize(12); textStyle(BOLD);
+    text('連', x+w-6, y+20);
+    fill(160,200,160,110); textSize(11); textStyle(NORMAL);
+    text('---', x+w-6, y+35);
   }
   textAlign(CENTER,CENTER); textStyle(NORMAL);
 
@@ -942,7 +981,7 @@ function drawStageCard(x,y,w,h,st,hov){
 // GAME INIT
 // ================================================================
 function startGame(idx){
-  currentStage=idx; roundsCleared=0; score=0; throwCount=0; streakCount=0;
+  currentStage=idx; roundsCleared=0; score=0; throwCount=0; streakCount=0; endlessIsNewRecord=false;
   loopMode=STAGES[idx].isLoop;
   if(loopMode) buildLoopPath();
   SCREEN='GAME'; initRound();
@@ -1038,7 +1077,7 @@ function drawLoopCounter(){
   vertex(COUNTER_L,flatY+14);
   // 左フラットのみ
   for(let x=COUNTER_L;x<=GAME_W*0.50-min(GAME_H*0.185,110)-2;x+=4) vertex(x,flatY+14);
-  vertex(GAME_W*0.50-min(GAME_H*0.185,110)-2,height);
+  vertex(GAME_W*0.50-min(GAME_H*0.185,110)-2,GAME_H);
   vertex(COUNTER_L,GAME_H);
   endShape(CLOSE);
   // 右フラット
@@ -1214,7 +1253,8 @@ function trackVx(){
 }
 
 function avgSpeed(){
-  if(vxHistory.length===0) return loopMode?abs(pathSpeed):abs(g.vx);
+  // フォールバックもtrackVxと同じpx換算で統一
+  if(vxHistory.length===0) return loopMode ? abs(pathSpeed)*3 : abs(g.vx);
   return vxHistory.reduce((a,b)=>a+b,0)/vxHistory.length;
 }
 
@@ -1326,11 +1366,8 @@ function drawOverlay(){
   }
   if(S==='ENDLESS_END'){
     let st=STAGES[currentStage];
-    let isNew=st.bestEndlessRecord && st.bestEndlessRecord.throws===throwCount && st.bestEndlessRecord.score===score;
     fill(0,0,0,185); noStroke(); rect(GAME_W/2-280,GAME_H/2-112,560,224,16);
-    // タイトル
     fill(255,180,60); textSize(28); textStyle(BOLD); text('🍺 連続モード終了！',GAME_W/2,GAME_H/2-70); textStyle(NORMAL);
-    // 今回の記録
     fill(255,255,255); textSize(16); textStyle(BOLD);
     text('連続成功  '+streakCount+'回', GAME_W/2, GAME_H/2-32);
     textStyle(NORMAL);
@@ -1338,11 +1375,10 @@ function drawOverlay(){
     text('SCORE  '+score, GAME_W/2, GAME_H/2-8);
     fill(180,200,180); textSize(13);
     text(throwCount+'投', GAME_W/2, GAME_H/2+14);
-    // ベスト表示
     if(st.bestEndlessRecord){
       let br=st.bestEndlessRecord;
-      fill(isNew?color(100,255,150):color(150,150,150)); textSize(12);
-      text(isNew?'🆕 NEW RECORD！':'BEST: 連続'+br.streak+'回  '+br.score+'pt  '+br.throws+'投', GAME_W/2, GAME_H/2+38);
+      fill(endlessIsNewRecord?color(100,255,150):color(150,150,150)); textSize(12);
+      text(endlessIsNewRecord?'🆕 NEW RECORD！':'BEST: 連続'+br.streak+'回  '+br.score+'pt  '+br.throws+'投', GAME_W/2, GAME_H/2+38);
     }
     fill(175,175,175); textSize(13);
     text('クリックでステージ選択へ', GAME_W/2, GAME_H/2+66);
@@ -1493,9 +1529,11 @@ function deliverTo(idx){
     } else {
       resultMsg='🍺 ナイスサーブ！  +1000';
     }
+    lastDeliverySuccess=true;   // 成功フラグ
   } else {
     resultMsg='😅 違う人に届いた！';
     custs[idx].face='😲'; custs[targetIdx].face='😤';
+    lastDeliverySuccess=false;
   }
   checkStageEnd();
 }
@@ -1517,6 +1555,7 @@ function finishRound(){
   }
   custs[targetIdx].face='😤';
   g.done=true; g.vx=0; g.vy=0; pathSpeed=0;
+  lastDeliverySuccess=false;
   checkStageEnd();
 }
 
@@ -1524,17 +1563,16 @@ function roundOver(){
   g.done=true; g.vx=0; g.vy=0; pathSpeed=0;
   custs[targetIdx].face='😤';
   resultMsg='😵 失速して戻った！';
+  lastDeliverySuccess=false;
   checkStageEnd();
 }
 
 function checkStageEnd(){
   if(gameMode==='endless'){
-    // 成功かどうかは resultMsg で判断（配達成功なら続行、それ以外は終了）
-    let succeeded = resultMsg.includes('ナイスサーブ');
-    if(succeeded){
-      S='RESULT'; // 成功 → 続行（クリックで次ラウンド）
+    if(lastDeliverySuccess){
+      S='RESULT';
     } else {
-      endlessEnd(); // 失敗 → 終了
+      endlessEnd();
     }
     return;
   }
@@ -1557,8 +1595,6 @@ function checkStageEnd(){
 }
 
 function endlessEnd(){
-  // 連続モードベストレコード更新
-  // 投げ数（throwCount）が多い方優先、同数ならスコア高い方
   let st=STAGES[currentStage];
   let isNew=false;
   if(!st.bestEndlessRecord){
@@ -1570,6 +1606,7 @@ function endlessEnd(){
   }
   if(isNew) st.bestEndlessRecord={score:score, throws:throwCount, streak:streakCount};
   saveRecords();
+  endlessIsNewRecord=isNew;  // 描画用フラグ
   S='ENDLESS_END';
 }
 
@@ -1611,18 +1648,19 @@ function mousePressed(){
   if(SCREEN==='STAGE_SELECT'){
     if(volSliderPress()) return;
     if(resetPress()) return;
-    // 連続モードボタン
-    let mbw=130,mbh=30,mbx=14,mby=GAME_H*0.925;
-    if(mouseX>mbx&&mouseX<mbx+mbw&&mouseY>mby&&mouseY<mby+mbh){
-      gameMode=gameMode==='single'?'endless':'single';
-      playButton(); return;
-    }
-    let cols=3,cardW=min(GAME_W*0.28,240),cardH=cardW*0.62,gapX=(width-cardW*cols)/(cols+1),startY=GAME_H*0.20;
+    // モード切替タブ（下部）
+    let tabW=160, tabH=32, tabY=GAME_H*0.895;
+    let tab1x=GAME_W/2-tabW-4, tab2x=GAME_W/2+4;
+    if(mouseX>tab1x&&mouseX<tab1x+tabW&&mouseY>tabY&&mouseY<tabY+tabH){ gameMode='single'; playButton(); return; }
+    if(mouseX>tab2x&&mouseX<tab2x+tabW&&mouseY>tabY&&mouseY<tabY+tabH){ gameMode='endless'; playButton(); return; }
+    // ステージカード
+    let cols=3,cardW=min(GAME_W*0.28,240),cardH=cardW*0.62,gapX=(GAME_W-cardW*cols)/(cols+1),startY=GAME_H*0.215;
     STAGES.forEach((st,i)=>{
-      let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+30);
+      let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+28);
       if(mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH){ playButton(); startGame(i); }
     });
-    let bw=140,bh=40,bx=GAME_W/2-70,by=GAME_H*0.92;
+    // ← タイトル（左下）
+    let bw=120,bh=34,bx=18,by=GAME_H*0.895;
     if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); SCREEN='TITLE'; }
     return;
   }
