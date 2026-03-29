@@ -64,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.36
+// BAR SLIDER v1.39
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -530,7 +530,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.36', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.39', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -834,7 +834,7 @@ function initStageWords(){
 
   // ─── スコアリセット テキスト ───
   stageWords.push({ txt:'スコアリセット', x:RST_X+RST_W/2, y:RST_Y+RST_H/2,
-    vx:0,vy:0,va:0,angle:0,alive:true, kind:'reset_text', sz:9, col:[180,120,120], hitR:46 });
+    vx:0,vy:0,va:0,angle:0,alive:true, kind:'reset_text', sz:12, col:[220,140,140], hitR:46 });
 }
 
 function drawStageWords(){
@@ -847,11 +847,15 @@ function drawStageWords(){
     if(w.kind==='neon_stage'){
       let a=w.alive?0.9:0.5*alpha_fade;
       for(let i=7;i>0;i--){ fill(w.col[0],w.col[1],w.col[2],i*16*a); noStroke(); textSize(w.sz+i*0.6); text(w.txt,0,0); }
+    } else if(w.kind==='thanks'){
+      // ゴールドネオン風
+      let a=w.alive?(0.7+sin(titleAnim*1.4)*0.3):0.5*alpha_fade;
+      for(let i=6;i>0;i--){ fill(w.col[0],w.col[1],w.col[2],i*18*a); noStroke(); textSize(w.sz+i*0.5); text(w.txt,0,0); }
     } else {
       let baseAlpha = {
         card_clear:230, card_label:220, card_stat:210, card_score:230,
         card_dash:110, stage_emoji:255, stage_name:220, stage_sub:170,
-        btn_text:200, tab_text:230, ui_text:170, reset_text:150
+        btn_text:200, tab_text:230, ui_text:170, reset_text:220
       }[w.kind] || 200;
       let a = w.alive ? baseAlpha : baseAlpha*alpha_fade*0.7;
       fill(w.col[0],w.col[1],w.col[2], a); noStroke();
@@ -874,6 +878,16 @@ function updateStageWords(){
       w.vy+=GRAVITY*0.52; w.vx*=0.985; w.angle+=w.va;
     }
   });
+  // 全部吹っ飛んだ＆グラス解放済み → Thank you for playing! を追加
+  if(stageGlassUnlocked && stageWords.length>0 &&
+     stageWords.every(w=>!w.alive) &&
+     !stageWords.find(w=>w.kind==='thanks')){
+    stageWords.push({
+      txt:'Thank you for playing!', x:GAME_W/2, y:GAME_H*0.08,
+      vx:0, vy:0, va:0, angle:0, alive:true,
+      kind:'thanks', sz:32, col:[255,215,100], hitR:200
+    });
+  }
 }
 
 function checkStageWordHits(){
@@ -889,7 +903,8 @@ function checkStageWordHits(){
       w.vx=stageGlass.vx*0.5+nx*random(2,6);
       w.vy=stageGlass.vy*0.3-random(1,6);
       w.va=random(-0.09, 0.09);
-      playObstacleHit(w.kind==='neon_stage');
+      if(w.kind==='thanks') playStageClear();
+      else playObstacleHit(w.kind==='neon_stage');
       for(let i=0;i<5;i++) parts.push({
         x:wx+random(-12,12), y:wy+random(-6,6),
         c:color(w.col[0],w.col[1],w.col[2]),
@@ -1235,12 +1250,17 @@ function drawResetButtonFrameOnly(){
   let hov=mouseX>RST_X&&mouseX<RST_X+RST_W&&mouseY>RST_Y&&mouseY<RST_Y+RST_H;
   push();
   if(resetConfirm){
+    // 確認状態：赤く点滅＋テキスト表示
     let blink=sin(frameCount*0.25)*0.5+0.5;
-    stroke(255,80,80,180+blink*60); strokeWeight(1.5);
-    fill(80,10,10,180); rect(RST_X,RST_Y,RST_W,RST_H,5);
+    stroke(255,80,80,200+blink*55); strokeWeight(2);
+    fill(80,10,10,200); rect(RST_X,RST_Y,RST_W,RST_H,5);
+    fill(255,100,100,230+blink*25); noStroke(); textSize(10); textStyle(BOLD);
+    textAlign(CENTER,CENTER); text('本当に？押して確定',RST_X+RST_W/2,RST_Y+RST_H/2);
+    textStyle(NORMAL);
   } else {
-    stroke(120,80,80,hov?160:90); strokeWeight(1);
-    fill(30,15,15,hov?120:70); rect(RST_X,RST_Y,RST_W,RST_H,5);
+    // 通常状態：←タイトル程度の視認性
+    stroke(200,100,100,hov?200:150); strokeWeight(hov?2:1.5);
+    fill(50,20,20,hov?140:90); rect(RST_X,RST_Y,RST_W,RST_H,5);
   }
   pop();
 }
