@@ -64,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.39
+// BAR SLIDER v1.52
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -349,8 +349,42 @@ function playDeliver(){
   });
 }
 
-// チャージ段階追跡
-let lastChargeTier=0;
+// ---------------------------------------------------------------
+// カスタマー吹っ飛び音：ドゴッ（500%ショット専用）
+// ---------------------------------------------------------------
+function playBlastCustomer(){
+  let ac=getACtx(), out=masterOut(0.38);
+  let t=ac.currentTime;
+  // 低域の「ドン」インパクト
+  let osc=ac.createOscillator(), env=ac.createGain();
+  osc.type='sine';
+  osc.frequency.setValueAtTime(120, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t+0.12);
+  env.gain.setValueAtTime(1.0, t);
+  env.gain.exponentialRampToValueAtTime(0.001, t+0.14);
+  osc.connect(env); env.connect(out);
+  osc.start(t); osc.stop(t+0.15);
+  // 中域のゴッ感（ノイズ）
+  let bufLen=Math.floor(ac.sampleRate*0.08);
+  let buf=ac.createBuffer(1,bufLen,ac.sampleRate);
+  let nd=buf.getChannelData(0);
+  for(let i=0;i<bufLen;i++) nd[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,0.5);
+  let nsrc=ac.createBufferSource(); nsrc.buffer=buf;
+  let lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=800;
+  let nenv=ac.createGain();
+  nenv.gain.setValueAtTime(0.9, t); nenv.gain.exponentialRampToValueAtTime(0.001, t+0.09);
+  nsrc.connect(lp); lp.connect(nenv); nenv.connect(out);
+  nsrc.start(t); nsrc.stop(t+0.10);
+}
+let chargeHoldFrames=0;   // 200%維持フレーム数
+let is500shot=false;      // 次の発射が500%ショットか
+let blast500Mode=false;   // 発射後の500%モード中
+// 500%モード時のカスタマー・バー小物吹っ飛びデータ
+let blastCustomers=[];    // [{x,y,vx,vy,va,angle,blown,data}]
+let blastBarParts=[];     // バーカウンターの破片
+let blastWords=[];
+let hadoukenTrail=[];
+let blastHoles=[];   // [{x, y, r}] カウンターに開いた穴
 
 let bgStars=[], titleAnim=0, hoverStage=-1;
 // タイトル画面グラス射出
@@ -501,7 +535,7 @@ function draw(){
   else {
     drawBgAtmosphere(); drawBottleShelf(); drawCounter();
     drawBarDetails(); drawTargetZone(); drawCustomers();
-    drawObstacles(); drawGlass(); drawParticles(); drawFloatingTexts();
+    drawObstacles(); drawGlass(); drawHadoukenTrail(); drawParticles(); drawFloatingTexts(); drawBlastWords();
     drawGameHUD(); drawOverlay();
     if(S==='SLIDE'){ physicsStep(); checkShelfBottleHits(); }
     obstacleStep(); particleStep(); updateShelfBottles(); updateFloatingTexts();
@@ -530,7 +564,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.39', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.52', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -1315,6 +1349,7 @@ function initRound(){
   custs=cxs.map((cx,i)=>({x:cx,name:names[i],y:stageSY(cx),face:'😐'}));
   targetIdx=floor(random(custs.length));
   dragging=false; parts=[]; resultMsg=''; floatingTexts=[]; vxHistory=[]; lastDeliverySuccess=false;
+  chargeHoldFrames=0; is500shot=false; blast500Mode=false; blastCustomers=[]; blastWords=[]; hadoukenTrail=[]; blastHoles=[];
   initShelfBottles();
   S='AIM';
 }
@@ -1329,49 +1364,93 @@ function drawCounter(){
 function drawStraightCounter(){
   let CR=counterRight(), pts=[];
   for(let x=COUNTER_L;x<=CR;x+=4) pts.push({x,y:stageSY(x)});
-  noStroke(); fill(46,24,6);
-  beginShape(); pts.forEach(p=>vertex(p.x,p.y+14)); vertex(CR,GAME_H); vertex(COUNTER_L,GAME_H); endShape(CLOSE);
-  for(let i=1;i<11;i++){ stroke(38,18,4,52+i*5); strokeWeight(1); noFill(); beginShape(); pts.forEach(p=>{let gy=p.y+18+i*16;if(gy<height)vertex(p.x,gy);}); endShape(); }
-  stroke(92,55,18); strokeWeight(16); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y+7)); endShape();
-  stroke(155,110,45,170); strokeWeight(2.5); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y)); endShape();
-  stroke(215,185,105,50); strokeWeight(1); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y-3)); endShape();
-  stroke(35,16,4); strokeWeight(1); fill(38,20,6);
-  beginShape(); vertex(COUNTER_L,stageSY(COUNTER_L)+14); vertex(CR,stageSY(CR)+14); vertex(CR,stageSY(CR)+30); vertex(COUNTER_L,stageSY(COUNTER_L)+30); endShape(CLOSE);
+
+  if(blastHoles.length>0){
+    // 穴あけモード：オフスクリーンに描いてdestination-outで穴を抜く
+    let g2=createGraphics(GAME_W, GAME_H);
+    g2.noStroke(); g2.fill(46,24,6);
+    g2.beginShape(); pts.forEach(p=>g2.vertex(p.x,p.y+14)); g2.vertex(CR,GAME_H); g2.vertex(COUNTER_L,GAME_H); g2.endShape(CLOSE);
+    for(let i=1;i<11;i++){ g2.stroke(38,18,4,52+i*5); g2.strokeWeight(1); g2.noFill(); g2.beginShape(); pts.forEach(p=>{let gy2=p.y+18+i*16;if(gy2<GAME_H)g2.vertex(p.x,gy2);}); g2.endShape(); }
+    g2.stroke(92,55,18); g2.strokeWeight(16); g2.noFill(); g2.beginShape(); pts.forEach(p=>g2.vertex(p.x,p.y+7)); g2.endShape();
+    g2.stroke(155,110,45,170); g2.strokeWeight(2.5); g2.noFill(); g2.beginShape(); pts.forEach(p=>g2.vertex(p.x,p.y)); g2.endShape();
+    g2.stroke(215,185,105,50); g2.strokeWeight(1); g2.noFill(); g2.beginShape(); pts.forEach(p=>g2.vertex(p.x,p.y-3)); g2.endShape();
+    g2.stroke(35,16,4); g2.strokeWeight(1); g2.fill(38,20,6);
+    g2.beginShape(); g2.vertex(COUNTER_L,stageSY(COUNTER_L)+14); g2.vertex(CR,stageSY(CR)+14); g2.vertex(CR,stageSY(CR)+30); g2.vertex(COUNTER_L,stageSY(COUNTER_L)+30); g2.endShape(CLOSE);
+    // 穴を抜く
+    g2.drawingContext.globalCompositeOperation='destination-out';
+    g2.noStroke();
+    blastHoles.forEach(h=>{
+      // 楕円形の穴（横長）
+      g2.fill(0); g2.ellipse(h.x, h.y, h.r*2.2, h.r*1.1);
+      // 穴の縁にさらに深い部分
+      g2.ellipse(h.x, h.y+4, h.r*1.6, h.r*0.7);
+    });
+    g2.drawingContext.globalCompositeOperation='source-over';
+    // 穴の縁の暗い影を描く（深さ表現）
+    blastHoles.forEach(h=>{
+      g2.noStroke(); g2.fill(15,7,2,180);
+      g2.ellipse(h.x+2, h.y+3, h.r*1.8, h.r*0.85);
+    });
+    // 本画面に転写
+    image(g2, 0, 0);
+    g2.remove();
+  } else {
+    // 通常描画
+    noStroke(); fill(46,24,6);
+    beginShape(); pts.forEach(p=>vertex(p.x,p.y+14)); vertex(CR,GAME_H); vertex(COUNTER_L,GAME_H); endShape(CLOSE);
+    for(let i=1;i<11;i++){ stroke(38,18,4,52+i*5); strokeWeight(1); noFill(); beginShape(); pts.forEach(p=>{let gy=p.y+18+i*16;if(gy<GAME_H)vertex(p.x,gy);}); endShape(); }
+    stroke(92,55,18); strokeWeight(16); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y+7)); endShape();
+    stroke(155,110,45,170); strokeWeight(2.5); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y)); endShape();
+    stroke(215,185,105,50); strokeWeight(1); noFill(); beginShape(); pts.forEach(p=>vertex(p.x,p.y-3)); endShape();
+    stroke(35,16,4); strokeWeight(1); fill(38,20,6);
+    beginShape(); vertex(COUNTER_L,stageSY(COUNTER_L)+14); vertex(CR,stageSY(CR)+14); vertex(CR,stageSY(CR)+30); vertex(COUNTER_L,stageSY(COUNTER_L)+30); endShape(CLOSE);
+  }
 }
 
 function drawLoopCounter(){
   if(stagePath.length===0) return;
   let pts=stagePath;
-
-  // 木製レール側面（厚み）
-  stroke(92,55,18); strokeWeight(14); noFill();
-  beginShape(); pts.forEach(p=>vertex(p.x,p.y+6)); endShape();
-
-  // レール天面
-  stroke(155,110,45,180); strokeWeight(2.5); noFill();
-  beginShape(); pts.forEach(p=>vertex(p.x,p.y)); endShape();
-
-  // ハイライト
-  stroke(215,185,105,55); strokeWeight(1); noFill();
-  beginShape(); pts.forEach(p=>vertex(p.x,p.y-2)); endShape();
-
-  // フラット部分は床板を埋める
   let flatY=GAME_H*0.65, CR=counterRight();
-  noStroke(); fill(46,24,6);
-  beginShape();
-  vertex(COUNTER_L,flatY+14);
-  // 左フラットのみ
-  for(let x=COUNTER_L;x<=GAME_W*0.50-min(GAME_H*0.185,110)-2;x+=4) vertex(x,flatY+14);
-  vertex(GAME_W*0.50-min(GAME_H*0.185,110)-2,GAME_H);
-  vertex(COUNTER_L,GAME_H);
-  endShape(CLOSE);
-  // 右フラット
-  noStroke(); fill(46,24,6);
-  beginShape();
-  vertex(GAME_W*0.50+min(GAME_H*0.185,110)+2,flatY+14);
-  for(let x=GAME_W*0.50+min(GAME_H*0.185,110)+2;x<=CR;x+=4) vertex(x,flatY+14);
-  vertex(CR,GAME_H); vertex(GAME_W*0.50+min(GAME_H*0.185,110)+2,GAME_H);
-  endShape(CLOSE);
+
+  if(blastHoles.length>0){
+    let g2=createGraphics(GAME_W,GAME_H);
+    g2.stroke(92,55,18); g2.strokeWeight(14); g2.noFill();
+    g2.beginShape(); pts.forEach(p=>g2.vertex(p.x,p.y+6)); g2.endShape();
+    g2.stroke(155,110,45,180); g2.strokeWeight(2.5); g2.noFill();
+    g2.beginShape(); pts.forEach(p=>g2.vertex(p.x,p.y)); g2.endShape();
+    g2.stroke(215,185,105,55); g2.strokeWeight(1); g2.noFill();
+    g2.beginShape(); pts.forEach(p=>g2.vertex(p.x,p.y-2)); g2.endShape();
+    g2.noStroke(); g2.fill(46,24,6);
+    g2.beginShape(); g2.vertex(COUNTER_L,flatY+14);
+    for(let x=COUNTER_L;x<=GAME_W*0.50-min(GAME_H*0.185,110)-2;x+=4) g2.vertex(x,flatY+14);
+    g2.vertex(GAME_W*0.50-min(GAME_H*0.185,110)-2,GAME_H); g2.vertex(COUNTER_L,GAME_H); g2.endShape(CLOSE);
+    g2.noStroke(); g2.fill(46,24,6);
+    g2.beginShape(); g2.vertex(GAME_W*0.50+min(GAME_H*0.185,110)+2,flatY+14);
+    for(let x=GAME_W*0.50+min(GAME_H*0.185,110)+2;x<=CR;x+=4) g2.vertex(x,flatY+14);
+    g2.vertex(CR,GAME_H); g2.vertex(GAME_W*0.50+min(GAME_H*0.185,110)+2,GAME_H); g2.endShape(CLOSE);
+    // 穴を抜く
+    g2.drawingContext.globalCompositeOperation='destination-out';
+    g2.noStroke();
+    blastHoles.forEach(h=>{ g2.fill(0); g2.ellipse(h.x,h.y,h.r*2.2,h.r*1.1); g2.ellipse(h.x,h.y+4,h.r*1.6,h.r*0.7); });
+    g2.drawingContext.globalCompositeOperation='source-over';
+    blastHoles.forEach(h=>{ g2.noStroke(); g2.fill(15,7,2,180); g2.ellipse(h.x+2,h.y+3,h.r*1.8,h.r*0.85); });
+    image(g2,0,0); g2.remove();
+  } else {
+    stroke(92,55,18); strokeWeight(14); noFill();
+    beginShape(); pts.forEach(p=>vertex(p.x,p.y+6)); endShape();
+    stroke(155,110,45,180); strokeWeight(2.5); noFill();
+    beginShape(); pts.forEach(p=>vertex(p.x,p.y)); endShape();
+    stroke(215,185,105,55); strokeWeight(1); noFill();
+    beginShape(); pts.forEach(p=>vertex(p.x,p.y-2)); endShape();
+    noStroke(); fill(46,24,6);
+    beginShape(); vertex(COUNTER_L,flatY+14);
+    for(let x=COUNTER_L;x<=GAME_W*0.50-min(GAME_H*0.185,110)-2;x+=4) vertex(x,flatY+14);
+    vertex(GAME_W*0.50-min(GAME_H*0.185,110)-2,GAME_H); vertex(COUNTER_L,GAME_H); endShape(CLOSE);
+    noStroke(); fill(46,24,6);
+    beginShape(); vertex(GAME_W*0.50+min(GAME_H*0.185,110)+2,flatY+14);
+    for(let x=GAME_W*0.50+min(GAME_H*0.185,110)+2;x<=CR;x+=4) vertex(x,flatY+14);
+    vertex(CR,GAME_H); vertex(GAME_W*0.50+min(GAME_H*0.185,110)+2,GAME_H); endShape(CLOSE);
+  }
 }
 
 // ================================================================
@@ -1418,17 +1497,34 @@ function drawTargetZone(){
 }
 
 function drawCustomers(){
+  if(blast500Mode){
+    // 500%モード：吹っ飛びカスタマーを描画
+    blastCustomers.forEach(bc=>{
+      if(bc.blown){
+        bc.x+=bc.vx; bc.y+=bc.vy;
+        bc.vy+=GRAVITY*0.6; bc.vx*=0.97; bc.angle+=bc.va;
+      }
+      let a=bc.blown ? constrain(map(bc.y,GAME_H*0.5,GAME_H+60,255,0),0,255) : 255;
+      if(a<=0) return;
+      push(); translate(bc.x, bc.y); rotate(bc.angle);
+      drawingContext.globalAlpha=a/255;
+      let isTarget=bc.data.name===custs[targetIdx]?.name;
+      fill(isTarget?color(75,52,128):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
+      fill(210,170,130); ellipse(0,-56,24,26);
+      textSize(14); noStroke(); text(bc.data.face,0,-56);
+      fill(165,165,165); textSize(9); text(bc.data.name,0,-76);
+      drawingContext.globalAlpha=1.0;
+      pop();
+    });
+    return;
+  }
   custs.forEach((c,i)=>{
     let isTarget=i===targetIdx, sy=stageSY(c.x);
     push(); translate(c.x,sy-8);
-    // 体
     fill(isTarget?color(75,52,128):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
-    // 頭・顔
     fill(210,170,130); ellipse(0,-56,24,26);
     textSize(14); noStroke(); text(c.face,0,-56);
-    // 名前
     fill(165,165,165); textSize(9); text(c.name,0,-76);
-    // オーダーバッジ（名前の上）
     if(isTarget&&S==='AIM'){
       fill(255,215,0,38+sin(frameCount*0.1)*18); noStroke(); ellipse(0,-92,58,16);
       fill(255,215,0,200); textSize(9); textStyle(BOLD); text('オーダー！',0,-92); textStyle(NORMAL);
@@ -1504,7 +1600,8 @@ function drawGlass(){
 
   if(S==='AIM'&&dragging){
     let ddx=mouseX-dStartX,ddy=mouseY-dStartY;
-    let dist=constrain(sqrt(ddx*ddx+ddy*ddy),0,MAX_DRAG);
+    let rawDist=sqrt(ddx*ddx+ddy*ddy);
+    let dist=constrain(rawDist,0,MAX_DRAG);
     let pct=constrain(dist/(MAX_DRAG*0.5),0,2.0);
     let pCol=pct<=1.0?lerpColor(color(50,220,100),color(255,200,0),pct):lerpColor(color(255,200,0),color(255,45,45),pct-1.0);
     stroke(255,255,255,70); strokeWeight(1.5); line(g.x,g.y+GLASS_H/2,dStartX,dStartY);
@@ -1514,14 +1611,43 @@ function drawGlass(){
     noFill(); stroke(255,215,0,80); strokeWeight(1.5); circle(g.x,g.y+GLASS_H/2,dist*1.1);
     stroke(255,215,0,45); strokeWeight(1); circle(g.x,g.y+GLASS_H/2,MAX_DRAG*0.5*1.1);
     let dispPct=floor(pct*100);
-    fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(14); textStyle(BOLD);
-    text(dispPct+'%', g.x, g.y - 28);
-    textStyle(NORMAL);
-    if(pct>=1.9){ fill(255,45,45,170+sin(frameCount*0.3)*60); textSize(11); text('MAX!', g.x, g.y-44); }
-    // チャージ音：67%・134%・200%の閾値を超えた瞬間に鳴らす
+    // 500%達成時は特別表示
+    if(is500shot){
+      let blink=sin(frameCount*0.5)*0.5+0.5;
+      fill(255,50+blink*50,0,230+blink*25); noStroke(); textSize(22); textStyle(BOLD);
+      text('500%!!!', g.x, g.y-28); textStyle(NORMAL);
+      // ショックウェーブ（広がる単発リング）
+      let sw=sin(frameCount*0.3)*0.5+0.5;
+      let swR=(frameCount%40)/40;  // 0→1 繰り返し
+      noFill(); stroke(255,80,0, 200*(1-swR)); strokeWeight(3*(1-swR)+1);
+      circle(g.x, g.y+GLASS_H/2, 30+swR*80);
+    } else {
+      fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(14); textStyle(BOLD);
+      text(dispPct+'%', g.x, g.y-28); textStyle(NORMAL);
+      if(pct>=1.9){ fill(255,45,45,170+sin(frameCount*0.3)*60); textSize(11); text('MAX!', g.x, g.y-44); }
+    }
+    // チャージ音
     let tier=pct<0.67?0:pct<1.34?1:pct<1.98?2:3;
     if(tier>0 && tier>lastChargeTier) playCharge(tier);
     lastChargeTier=tier;
+    // 500%チャージ判定：超引っ張り OR 200%を5秒維持
+    if(!is500shot){
+      let rawDist=sqrt(ddx*ddx+ddy*ddy);
+      if(rawDist > MAX_DRAG*1.3){
+        is500shot=true; chargeHoldFrames=0;
+        playCharge(3); playCharge(3);
+      } else if(pct>=1.98){
+        chargeHoldFrames++;
+        if(chargeHoldFrames>=300){ is500shot=true; chargeHoldFrames=0; playCharge(3); playCharge(3); }
+      } else {
+        chargeHoldFrames=0;
+      }
+    } else {
+      // 500%達成後も引っ張りをほぼ戻したらキャンセル（~197%以下）
+      if(pct < 1.97){
+        is500shot=false; chargeHoldFrames=0;
+      }
+    }
   }
 }
 
@@ -1572,6 +1698,29 @@ function updateFloatingTexts(){
   });
 }
 
+function drawHadoukenTrail(){
+  hadoukenTrail.forEach((t,i)=>{
+    let a=map(i,0,hadoukenTrail.length,0,t.alpha);
+    let r=map(i,0,hadoukenTrail.length,4,t.r);
+    noStroke(); fill(255,80+i*8,0,a);
+    circle(t.x,t.y,r*2);
+  });
+  hadoukenTrail.forEach(t=>{ t.r*=0.92; t.alpha*=0.88; });
+  hadoukenTrail=hadoukenTrail.filter(t=>t.alpha>4);
+}
+
+function drawBlastWords(){
+  blastWords.forEach(bw=>{
+    if(!bw.blown) return;
+    bw.x+=bw.vx; bw.y+=bw.vy; bw.vy+=0.3; bw.vx*=0.97; bw.angle+=bw.va;
+    let a=constrain(map(bw.y,GAME_H*0.3,GAME_H+40,255,0),0,255);
+    if(a<=0) return;
+    push(); translate(bw.x,bw.y); rotate(bw.angle);
+    fill(bw.col[0],bw.col[1],bw.col[2],a); noStroke(); textSize(bw.sz); textStyle(BOLD);
+    text(bw.txt,0,0); textStyle(NORMAL); pop();
+  });
+}
+
 function drawArrow(x1,y1,x2,y2){ line(x1,y1,x2,y2); let ang=atan2(y2-y1,x2-x1); push(); translate(x2,y2); rotate(ang); noStroke(); triangle(0,0,-12,-5,-12,5); pop(); }
 function drawParticles(){ noStroke(); parts.forEach(p=>{ fill(red(p.c),green(p.c),blue(p.c),p.alpha); circle(p.x,p.y,p.r*2); }); }
 
@@ -1580,43 +1729,57 @@ function drawParticles(){ noStroke(); parts.forEach(p=>{ fill(red(p.c),green(p.c
 // ================================================================
 function drawGameHUD(){
   let st=STAGES[currentStage];
-  fill(255,215,0); noStroke(); textStyle(BOLD); textSize(16); textAlign(LEFT,TOP);
-  text(st.emoji+' '+st.name, 18, 14); textStyle(NORMAL);
-  fill(255,255,255); textSize(15); text('SCORE  '+score, 18, 36);
-  fill(180,180,180); textSize(12); text(throwCount+'投目', 18, 56);
-  // モード表示
-  fill(gameMode==='endless'?color(100,200,255):color(160,160,160)); textSize(11);
-  text(gameMode==='endless'?'🔄 連続モード':'📍 単一モード', 18, 72);
-
+  // 通常HUD
+  // blast500Mode中はblastWordsが描画担当のテキストは抑制（二重描画防止）
+  let blownMap={};
+  if(blast500Mode) blastWords.forEach((bw,i)=>{ if(bw.blown) blownMap[i]=true; });
+  // 左上：ステージ名・SCORE・投目・モード（blast500Mode中でもblownでなければ表示）
+  let b0=blast500Mode&&blastWords[0]&&blastWords[0].blown;
+  let b1=blast500Mode&&blastWords[1]&&blastWords[1].blown;
+  let b4=blast500Mode&&blastWords[4]&&blastWords[4].blown;
+  let b5=blast500Mode&&blastWords[5]&&blastWords[5].blown;
+  if(!b0){ fill(255,215,0); noStroke(); textStyle(BOLD); textSize(16); textAlign(LEFT,TOP); text(st.emoji+' '+st.name, 18, 14); textStyle(NORMAL); }
+  if(!b1){ fill(255,255,255); textSize(15); textAlign(LEFT,TOP); text('SCORE  '+score, 18, 36); }
+  if(!b4){ fill(180,180,180); textSize(12); textAlign(LEFT,TOP); text(throwCount+'投目', 18, 56); }
+  if(!b5){ fill(gameMode==='endless'?color(100,200,255):color(160,160,160)); textSize(11); textAlign(LEFT,TOP);
+    text(gameMode==='endless'?'🔄 連続モード':'📍 単一モード', 18, 72); }
+  // 右上HUD（blast500Mode中はblownになったものを抑制）
+  let b6=blast500Mode&&blastWords[6]&&blastWords[6].blown;
+  let b7=blast500Mode&&blastWords[7]&&blastWords[7].blown;
   textAlign(RIGHT,TOP);
   if(gameMode==='endless'){
-    fill(255,180,60); textSize(15); textStyle(BOLD);
-    text('連続 '+streakCount+'回', GAME_W-18, 14); textStyle(NORMAL);
-    fill(180,180,180); textSize(11); text('2回成功でクリアなし', GAME_W-18, 36);
+    if(!b6){ fill(255,180,60); textSize(15); textStyle(BOLD); text('連続 '+streakCount+'回', GAME_W-18, 14); textStyle(NORMAL); }
   } else {
     let hearts=''; for(let i=0;i<roundsCleared;i++) hearts+='🍺';
-    fill(255,215,0); textSize(16); textStyle(BOLD); text(hearts||'―', GAME_W-18, 14); textStyle(NORMAL);
-    fill(180,180,180); textSize(12); text('あと'+(roundsNeeded-roundsCleared)+'回成功でクリア', GAME_W-18, 36);
+    if(!b6){ fill(255,215,0); textSize(16); textStyle(BOLD); text(hearts||'―', GAME_W-18, 14); textStyle(NORMAL); }
+    if(!b7){ fill(180,180,180); textSize(12); text('あと'+(roundsNeeded-roundsCleared)+'回成功でクリア', GAME_W-18, 36); }
   }
 
+  // 中央：オーダーテキスト
+  let b2=blast500Mode&&blastWords[2]&&blastWords[2].blown;
   textAlign(CENTER,CENTER);
-  if(S==='AIM'){
+  if((S==='AIM'||blast500Mode) && !b2){
     fill(255,255,255,220); textSize(15); textStyle(BOLD);
     text('オーダー: '+custs[targetIdx].name+' にビールを！', GAME_W/2, 26);
     textStyle(NORMAL);
+  }
+  if(S==='AIM'){
     fill(180,180,180,160); textSize(13);
     text('グラスをクリック → 引っ張る → 離す', GAME_W/2, GAME_H-26);
   }
 
-  // ← ステージ選択ボタン
+  // ← ステージ選択ボタン（テキストはblastWords[3]が担当）
+  let b3=blast500Mode&&blastWords[3]&&blastWords[3].blown;
   let bw=130,bh=32,bx=14,by=GAME_H-50;
   let hovBack=mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh;
   push();
   stroke(120,120,120,hovBack?200:100); strokeWeight(1);
   fill(0,0,0,hovBack?120:70); rect(bx,by,bw,bh,6);
-  fill(180,180,180,hovBack?240:160); noStroke(); textSize(12); textStyle(hovBack?BOLD:NORMAL);
-  textAlign(CENTER,CENTER); text('← ステージ選択', bx+bw/2, by+bh/2);
-  textStyle(NORMAL); textAlign(CENTER,CENTER);
+  if(!b3){
+    fill(180,180,180,hovBack?240:160); noStroke(); textSize(12); textStyle(hovBack?BOLD:NORMAL);
+    textAlign(CENTER,CENTER); text('← ステージ選択', bx+bw/2, by+bh/2);
+    textStyle(NORMAL);
+  }
   pop();
 }
 
@@ -1664,6 +1827,63 @@ function drawOverlay(){
 // ================================================================
 function physicsStep(){
   if(g.done) return;
+
+  // 500%ブラストモード
+  if(blast500Mode){
+    let gx=g.x, gy=g.y;
+    let bR=90;
+    // カウンター面に穴を開ける
+    let surf=stageSY(gx);
+    if(gy+GLASS_H > surf-20 && gy < surf+40 && gx>COUNTER_L && gx<counterRight()){
+      let tooClose=blastHoles.some(h=>dist(gx,gy,h.x,h.y)<30);
+      if(!tooClose){
+        blastHoles.push({x:gx, y:surf+7, r:28+random(-6,6)});
+        for(let i=0;i<10;i++) parts.push({
+          x:gx+random(-20,20), y:surf+random(-5,15),
+          c:color(92+random(-20,20),55+random(-10,10),18),
+          vx:random(-6,6), vy:random(-8,-1),
+          r:random(2,6), alpha:220
+        });
+        shakeAmt=max(shakeAmt,5);
+      }
+    }
+    // 波動拳トレイル
+    hadoukenTrail.push({x:gx,y:gy,r:20,alpha:200,col:color(255,80,0)});
+    if(hadoukenTrail.length>20) hadoukenTrail.shift();
+    // カスタマー吹っ飛ばし
+    blastCustomers.forEach(bc=>{
+      if(bc.blown) return;
+      if(sqrt((gx-bc.x)**2+(gy-bc.y)**2)<bR){
+        bc.blown=true;
+        bc.vx=g.vx*0.6+random(-5,5);
+        bc.vy=min(g.vy*0.4,-3)-random(3,8);
+        bc.va=random(-0.14,0.14);
+        spawnParts(bc.x,bc.y,color(210,170,130),14); shakeAmt=10; playObstacleHit(false);
+      }
+    });
+    // HUDテキスト吹っ飛ばし
+    blastWords.forEach(bw=>{
+      if(bw.blown) return;
+      if(sqrt((gx-bw.x)**2+(gy-bw.y)**2)<bR+40){
+        bw.blown=true;
+        bw.vx=g.vx*0.4+random(-3,3);
+        bw.vy=g.vy*0.3-random(2,6);
+        bw.va=random(-0.1,0.1);
+        for(let i=0;i<6;i++) parts.push({x:bw.x+random(-20,20),y:bw.y+random(-5,5),
+          c:color(bw.col[0],bw.col[1],bw.col[2]),vx:random(-4,4),vy:random(-5,0),r:random(2,4),alpha:180});
+      }
+    });
+    // 障害物・棚ボトル
+    obs.forEach(o=>{ if(o.on&&dist(gx,gy,o.x,o.y)<bR) hitObs(o); });
+    shelfBottles.forEach(b=>{ if(!b.blown&&b.on!==false&&abs(gx-b.x)<bR&&abs(gy-b.baseY)<bR){
+      b.vx=g.vx*0.5+random(-3,3); b.vy=-random(4,9); b.va=random(-0.15,0.15);
+      b.on=false; b.blown=true;
+      playObstacleHit(true);
+      spawnParts(b.x,b.baseY-b.h/2,color(b.col[0],b.col[1],b.col[2]),5);
+      score+=50; spawnFloatingText(b.x,b.baseY-b.h-10,'+50',[255,215,0]);
+    }});
+  }
+
   if(loopMode){ physicsStepLoop(); return; }
   if(g.airborne){
     g.vy+=GRAVITY; g.vx*=AIR_FRICTION;
@@ -1672,15 +1892,21 @@ function physicsStep(){
     g.angle+=g.vx*0.018;
     trackVx();
     let CR=counterRight();
-    if(g.x<COUNTER_L-40||g.x>CR+60||g.y>GAME_H+60){ finishRound(); return; }
-    // サブステップ着地判定（速度が大きい時に突き抜け防止）
-    let surf=stageSY(g.x)-GLASS_H;
-    if(g.y>=surf&&g.vy>0){
-      g.y=surf; g.vy=0; g.vx*=0.75; g.airborne=false;
-      shakeAmt=4; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6); playLand();
+    let leftBound  = blast500Mode ? COUNTER_L-300 : COUNTER_L-40;
+    let rightBound = blast500Mode ? CR+600       : CR+60;
+    let bottomBound= blast500Mode ? GAME_H+200    : GAME_H+60;
+    if(g.x<leftBound||g.x>rightBound||g.y>bottomBound){ finishRound(); return; }
+    // 着地判定（blast500Mode時はスキップ：地面を突き抜けて飛び続ける）
+    if(!blast500Mode){
+      let surf=stageSY(g.x)-GLASS_H;
+      if(g.y>=surf&&g.vy>0){
+        g.y=surf; g.vy=0; g.vx*=0.75; g.airborne=false;
+        shakeAmt=4; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6); playLand();
+      }
     }
     obs.forEach(o=>{ if(o.on&&abs(g.x-o.x)<22&&abs(g.y-o.y)<22) hitObs(o); });
-    if(travelDist>60){
+    // 配達判定（blast500Mode時はスキップ：お客さんに当たっても止まらない）
+    if(!blast500Mode && travelDist>60){
       let hit=findHitCustomer();
       if(hit>=0){ deliverTo(hit); return; }
     }
@@ -1692,14 +1918,14 @@ function physicsStep(){
     g.angle=lerp(g.angle,-g.vx*0.024,0.12);
     trackVx();
     obs.forEach(o=>{ if(o.on&&abs(g.x-o.x)<20) hitObs(o); });
-    if(travelDist>60){
+    if(!blast500Mode && travelDist>60){
       let hit=findHitCustomer();
       if(hit>=0){ deliverTo(hit); return; }
     }
     let CR=counterRight();
     if(g.x>CR+10) finishRound();
     else if(g.x<COUNTER_L+20&&travelDist>100) finishRound();
-    else if(abs(g.vx)<0.35&&travelDist>80) finishRound();
+    else if(!blast500Mode && abs(g.vx)<0.35&&travelDist>80) finishRound();
   }
 }
 
@@ -1708,6 +1934,33 @@ function physicsStep(){
 // ================================================================
 function physicsStepLoop(){
   if(g.done) return;
+  // 500%ブラスト：ループでも全オブジェクト吹っ飛ばし
+  if(blast500Mode){
+    let gx=g.x, gy=g.y; let bR=90;
+    hadoukenTrail.push({x:gx,y:gy,r:20,alpha:200,col:color(255,80,0)});
+    if(hadoukenTrail.length>20) hadoukenTrail.shift();
+    blastCustomers.forEach(bc=>{
+      if(bc.blown) return;
+      if(sqrt((gx-bc.x)**2+(gy-bc.y)**2)<bR){
+        bc.blown=true; bc.vx=pathSpeed*1.5+random(-5,5); bc.vy=-random(4,10); bc.va=random(-0.14,0.14);
+        spawnParts(bc.x,bc.y,color(210,170,130),14); shakeAmt=10; playObstacleHit(false);
+      }
+    });
+    blastWords.forEach(bw=>{
+      if(bw.blown) return;
+      if(sqrt((gx-bw.x)**2+(gy-bw.y)**2)<bR+40){
+        bw.blown=true; bw.vx=pathSpeed*0.8+random(-3,3); bw.vy=-random(2,6); bw.va=random(-0.1,0.1);
+      }
+    });
+    obs.forEach(o=>{ if(o.on&&dist(gx,gy,o.x,o.y)<bR) hitObs(o); });
+    shelfBottles.forEach(b=>{ if(!b.blown&&b.on!==false&&abs(gx-b.x)<bR&&abs(gy-b.baseY)<bR){
+      b.vx=pathSpeed*0.5+random(-3,3); b.vy=-random(4,9); b.va=random(-0.15,0.15);
+      b.on=false; b.blown=true;
+      playObstacleHit(true);
+      spawnParts(b.x,b.baseY-b.h/2,color(b.col[0],b.col[1],b.col[2]),5);
+      score+=50; spawnFloatingText(b.x,b.baseY-b.h-10,'+50',[255,215,0]);
+    }});
+  }
 
   // 空中中はフリー物理
   if(g.airborne){
@@ -1814,6 +2067,13 @@ function deliverTo(idx){
 
 function finishRound(){
   if(g.done) return;
+  if(blast500Mode){
+    resultMsg='💥 吹っ飛ばした！';
+    // blast500Mode=true のままにする（initRoundまでお客さん・文字を復活させない）
+    g.done=true; g.vx=0; g.vy=0; pathSpeed=0;
+    lastDeliverySuccess=false;
+    checkStageEnd(); return;
+  }
   if(loopMode){
     if(g.airborne && g.y>GAME_H)              resultMsg='🌊 床に落ちた！';
     else if(g.airborne && g.x>counterRight()) resultMsg='🥊 端から落ちた！';
@@ -1835,8 +2095,8 @@ function finishRound(){
 
 function roundOver(){
   g.done=true; g.vx=0; g.vy=0; pathSpeed=0;
-  custs[targetIdx].face='😤';
-  resultMsg='😵 失速して戻った！';
+  if(blast500Mode){ resultMsg='💥 吹っ飛ばした！'; /* blast500Mode=true のまま保持 */ }
+  else { custs[targetIdx].face='😤'; resultMsg='😵 失速して戻った！'; }
   lastDeliverySuccess=false;
   checkStageEnd();
 }
@@ -2008,12 +2268,43 @@ function mouseReleased(){
   let spd=constrain(d,MIN_DRAG,MAX_DRAG);
   let speed=map(spd,MIN_DRAG,MAX_DRAG,1.2,MAX_SPEED);
 
+  // 500%ショット：速度×2＋blastモード起動
+  if(is500shot){
+    speed=MAX_SPEED*1.2;
+    blast500Mode=true;
+    blastCustomers=custs.map(c=>{
+      let sy=stageSY(c.x);
+      return { x:c.x, y:sy-8, vx:0, vy:0, va:0, angle:0, blown:false, data:Object.assign({},c) };
+    });
+    blastBarParts=[];
+    hadoukenTrail=[];
+    // HUDテキストオブジェクト化
+    let st=STAGES[currentStage];
+    blastWords=[
+      {txt:st.emoji+' '+st.name,                                    x:130, y:22, vx:0,vy:0,va:0,angle:0,blown:false,sz:16,col:[255,215,0]},   // [0]
+      {txt:'SCORE  '+score,                                          x:100, y:44, vx:0,vy:0,va:0,angle:0,blown:false,sz:15,col:[255,255,255]},  // [1]
+      {txt:'オーダー: '+custs[targetIdx].name+' にビールを！',       x:GAME_W/2,y:26,vx:0,vy:0,va:0,angle:0,blown:false,sz:15,col:[255,255,255]}, // [2]
+      {txt:'← ステージ選択', x:14+65, y:GAME_H-34, vx:0,vy:0,va:0,angle:0,blown:false,sz:12,col:[180,180,180]},  // [3]
+      {txt:throwCount+'投目',                                        x:60,  y:56, vx:0,vy:0,va:0,angle:0,blown:false,sz:12,col:[180,180,180]},  // [4]
+      {txt:gameMode==='endless'?'🔄 連続モード':'📍 単一モード',     x:68,  y:72, vx:0,vy:0,va:0,angle:0,blown:false,sz:11,col:gameMode==='endless'?[100,200,255]:[160,160,160]}, // [5]
+      // 右上（[5][6]）
+      ...(gameMode==='endless'
+        ? [{txt:'連続 '+streakCount+'回', x:GAME_W-60,y:22,vx:0,vy:0,va:0,angle:0,blown:false,sz:15,col:[255,180,60]}]
+        : [
+            {txt:(()=>{ let h=''; for(let i=0;i<roundsCleared;i++) h+='🍺'; return h||'―'; })(), x:GAME_W-60,y:22,vx:0,vy:0,va:0,angle:0,blown:false,sz:16,col:[255,215,0]},
+            {txt:'あと'+(roundsNeeded-roundsCleared)+'回成功でクリア', x:GAME_W-130,y:44,vx:0,vy:0,va:0,angle:0,blown:false,sz:12,col:[180,180,180]},
+          ]
+      ),
+    ];
+    is500shot=false; chargeHoldFrames=0;
+  }
+
   // 引き方向の逆ベクトルで射出（ループ・通常共通）
   g.vx=-(ddx/d)*speed;
   g.vy=-(ddy/d)*speed;
 
   if(loopMode){
-    if(g.vy<-1.5){
+    if(blast500Mode || g.vy<-1.5){
       g.airborne=true;
     } else {
       let horizComp=-(ddx/d);
@@ -2021,14 +2312,16 @@ function mouseReleased(){
       g.vx=0; g.vy=0;
     }
   } else {
-    g.airborne=g.vy<-1.5;
+    // blast500Mode時は必ず空中（地面に吸着しない）
+    g.airborne = blast500Mode ? true : g.vy<-1.5;
     if(!g.airborne) g.vy=0;
   }
   // 発射音（引っ張り量に応じて3段階）
   let launchPct=map(spd,MIN_DRAG,MAX_DRAG,0,200);
   playLaunch(launchPct);
   lastChargeTier=0;
-  throwCount++;   // 投げ数カウント
+  chargeHoldFrames=0;
+  throwCount++;
   S='SLIDE';
 }
 
