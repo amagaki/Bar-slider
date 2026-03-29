@@ -10,7 +10,6 @@
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
-
     gtag('config', 'G-T9YEVXF39B');
   </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
@@ -73,7 +72,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.63
+// BAR SLIDER v1.65
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -470,7 +469,9 @@ function setup(){
   makeStars();
   initTitleWords();
   initShelfBottles();
-  loadRecords();  // localStorage からスコア読み込み
+  loadRecords();
+  // GA: ゲーム起動（タイトル画面ロード）
+  if(typeof gtag==='function') gtag('event','game_launch',{game_version:'1.65'});
 }
 
 // ================================================================
@@ -549,7 +550,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.63', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.65', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -922,7 +923,11 @@ function checkStageWordHits(){
       w.vx=stageGlass.vx*0.5+nx*random(2,6);
       w.vy=stageGlass.vy*0.3-random(1,6);
       w.va=random(-0.09, 0.09);
-      if(w.kind==='thanks') playStageClear();
+      if(w.kind==='thanks'){
+        playStageClear();
+        // GA: Thank you for playing! 吹っ飛ばし達成
+        if(typeof gtag==='function') gtag('event','thankyou_blown');
+      }
       else playObstacleHit(w.kind==='neon_stage');
       for(let i=0;i<5;i++) parts.push({
         x:wx+random(-12,12), y:wy+random(-6,6),
@@ -1183,6 +1188,10 @@ function startGame(idx){
   stageGlassUnlocked=false;
   loopMode=STAGES[idx].isLoop;
   if(loopMode) buildLoopPath();
+  // GA: ステージ選択・ゲーム開始（ファネル分析用）
+  if(typeof gtag==='function') gtag('event','stage_start',{
+    stage_id: idx, stage_name: STAGES[idx].name, mode: gameMode
+  });
   SCREEN='GAME'; initRound();
 }
 
@@ -2005,8 +2014,20 @@ function checkStageEnd(){
     }
     if(isNewRecord) st.bestRecord={score:score, throws:throwCount};
     saveRecords();
+    // GA: ステージクリア（ファネル・平均投数・人気ステージ分析用）
+    if(typeof gtag==='function') gtag('event','stage_clear',{
+      stage_id: currentStage, stage_name: st.name,
+      throws: throwCount, score: score, is_new_record: isNewRecord
+    });
     S='STAGE_CLEAR'; playStageClear();
-  } else S='RESULT';
+  } else {
+    // GA: ラウンド失敗（離脱率分析用）
+    if(typeof gtag==='function') gtag('event','round_fail',{
+      stage_id: currentStage, stage_name: STAGES[currentStage].name,
+      throws_so_far: throwCount, rounds_cleared: roundsCleared
+    });
+    S='RESULT';
+  }
 }
 
 function endlessEnd(){
@@ -2021,7 +2042,12 @@ function endlessEnd(){
   }
   if(isNew) st.bestEndlessRecord={score:score, throws:throwCount, streak:streakCount};
   saveRecords();
-  endlessIsNewRecord=isNew;  // 描画用フラグ
+  endlessIsNewRecord=isNew;
+  // GA: 連続モード終了（連続記録・スコア）
+  if(typeof gtag==='function') gtag('event','endless_end',{
+    stage_id: currentStage, stage_name: st.name,
+    streak: streakCount, score: score, is_new_record: isNew
+  });
   S='ENDLESS_END';
 }
 
