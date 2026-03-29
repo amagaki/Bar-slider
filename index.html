@@ -64,7 +64,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.52
+// BAR SLIDER v1.61
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -352,30 +352,6 @@ function playDeliver(){
 // ---------------------------------------------------------------
 // カスタマー吹っ飛び音：ドゴッ（500%ショット専用）
 // ---------------------------------------------------------------
-function playBlastCustomer(){
-  let ac=getACtx(), out=masterOut(0.38);
-  let t=ac.currentTime;
-  // 低域の「ドン」インパクト
-  let osc=ac.createOscillator(), env=ac.createGain();
-  osc.type='sine';
-  osc.frequency.setValueAtTime(120, t);
-  osc.frequency.exponentialRampToValueAtTime(40, t+0.12);
-  env.gain.setValueAtTime(1.0, t);
-  env.gain.exponentialRampToValueAtTime(0.001, t+0.14);
-  osc.connect(env); env.connect(out);
-  osc.start(t); osc.stop(t+0.15);
-  // 中域のゴッ感（ノイズ）
-  let bufLen=Math.floor(ac.sampleRate*0.08);
-  let buf=ac.createBuffer(1,bufLen,ac.sampleRate);
-  let nd=buf.getChannelData(0);
-  for(let i=0;i<bufLen;i++) nd[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,0.5);
-  let nsrc=ac.createBufferSource(); nsrc.buffer=buf;
-  let lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=800;
-  let nenv=ac.createGain();
-  nenv.gain.setValueAtTime(0.9, t); nenv.gain.exponentialRampToValueAtTime(0.001, t+0.09);
-  nsrc.connect(lp); lp.connect(nenv); nenv.connect(out);
-  nsrc.start(t); nsrc.stop(t+0.10);
-}
 let chargeHoldFrames=0;   // 200%維持フレーム数
 let is500shot=false;      // 次の発射が500%ショットか
 let blast500Mode=false;   // 発射後の500%モード中
@@ -564,7 +540,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.52', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.61', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -1032,15 +1008,6 @@ function stageGlassRelease(){
   lastChargeTier=0;
 }
 
-function drawButton(x,y,w,h,label,hov,col){
-  push();
-  if(hov){ fill(col[0],col[1],col[2],38); noStroke(); rect(x-4,y-4,w+8,h+8,14); }
-  stroke(col[0],col[1],col[2],hov?230:150); strokeWeight(hov?2.5:1.5);
-  fill(col[0],col[1],col[2],hov?32:16); rect(x,y,w,h,10);
-  fill(col[0],col[1],col[2],hov?255:200); noStroke(); textStyle(BOLD); textSize(hov?20:18);
-  text(label,x+w/2,y+h/2); textStyle(NORMAL); pop();
-}
-
 // ================================================================
 // STAGE SELECT
 // ================================================================
@@ -1110,26 +1077,6 @@ function drawStageSelect(){
 // スコアリセットボタン（右上・STAGE SELECTと同じ高さ）
 const RST_X=GAME_W-118, RST_Y=GAME_H*0.065, RST_W=100, RST_H=28;
 
-function drawResetButton(){
-  let hov=mouseX>RST_X&&mouseX<RST_X+RST_W&&mouseY>RST_Y&&mouseY<RST_Y+RST_H;
-  push();
-  if(resetConfirm){
-    // 確認状態：赤く点滅
-    let blink=sin(frameCount*0.25)*0.5+0.5;
-    stroke(255,80,80,180+blink*60); strokeWeight(1.5);
-    fill(80,10,10,180); rect(RST_X,RST_Y,RST_W,RST_H,5);
-    fill(255,100,100,230+blink*25); noStroke(); textSize(9); textStyle(BOLD);
-    textAlign(CENTER,CENTER); text('本当に？押して確定',RST_X+RST_W/2,RST_Y+RST_H/2);
-    textStyle(NORMAL);
-  } else {
-    stroke(120,80,80,hov?160:90); strokeWeight(1);
-    fill(30,15,15,hov?120:70); rect(RST_X,RST_Y,RST_W,RST_H,5);
-    fill(180,120,120,hov?220:150); noStroke(); textSize(9);
-    textAlign(CENTER,CENTER); text('スコアリセット',RST_X+RST_W/2,RST_Y+RST_H/2);
-  }
-  pop();
-}
-
 function resetPress(){
   if(SCREEN!=='STAGE_SELECT') return false;
   if(mouseX<RST_X||mouseX>RST_X+RST_W||mouseY<RST_Y||mouseY>RST_Y+RST_H) return false;
@@ -1148,28 +1095,6 @@ function resetPress(){
 // SE音量スライダー（右下・←タイトルと同じ高さ、リセットと同X）
 const VOL_X=GAME_W-118, VOL_Y=GAME_H*0.912, VOL_W=100, VOL_H=6;
 let volDragging=false;
-
-function drawVolumeSlider(){
-  let knobX=VOL_X+seVolume*VOL_W;
-  // ラベル
-  fill(160,160,160); noStroke(); textSize(10); textAlign(CENTER,CENTER);
-  text('🔊 SE音量', VOL_X+VOL_W/2, VOL_Y-12);
-  // トラック背景
-  stroke(60,60,90); strokeWeight(2); noFill();
-  line(VOL_X, VOL_Y, VOL_X+VOL_W, VOL_Y);
-  // トラック前半（塗り）
-  stroke(100,180,255); strokeWeight(2);
-  line(VOL_X, VOL_Y, knobX, VOL_Y);
-  // ノブ
-  let hovKnob=dist(mouseX,mouseY,knobX,VOL_Y)<10;
-  fill(hovKnob||volDragging?color(150,210,255):color(100,180,255));
-  noStroke();
-  circle(knobX, VOL_Y, hovKnob||volDragging?14:10);
-  // 数値
-  fill(140,140,160); textSize(9);
-  text(floor(seVolume*100)+'%', VOL_X+VOL_W/2, VOL_Y+14);
-  textAlign(CENTER,CENTER);
-}
 
 function updateVolumeSlider(){
   if(!volDragging) return;
@@ -1192,60 +1117,6 @@ function volSliderPress(){
 
 function volSliderRelease(){
   if(volDragging){ volDragging=false; playCharge(2); }  // 離した時にSEでフィードバック
-}
-
-function drawStageCard(x,y,w,h,st,hov){
-  push();
-  let bc=st.cleared?[100,230,100]:hov?[255,200,60]:[80,80,120];
-  if(hov){ fill(255,200,60,18); noStroke(); rect(x-3,y-3,w+6,h+6,14); }
-  stroke(bc[0],bc[1],bc[2],hov?220:140); strokeWeight(hov?2:1.5);
-  fill(12,10,28,200); rect(x,y,w,h,10);
-
-  if(st.cleared && st.bestRecord){
-    noStroke(); textAlign(LEFT,TOP);
-    fill(100,230,100,230); textStyle(BOLD); textSize(11);
-    text('✓ CLEAR', x+6, y+5);
-    fill(180,215,255,220); textSize(12); textStyle(BOLD);
-    text('単', x+6, y+20);
-    fill(160,200,160,210); textSize(12); textStyle(NORMAL);
-    text(st.bestRecord.throws+'投', x+6, y+35);
-    fill(255,215,0,230); textSize(14); textStyle(BOLD);
-    text(st.bestRecord.score+'pt', x+6, y+50);
-  } else {
-    noStroke(); textAlign(LEFT,TOP);
-    if(st.cleared){ fill(100,230,100,230); textStyle(BOLD); textSize(11); text('✓ CLEAR', x+6, y+5); }
-    // 単ラベルは未スコアでも見やすく
-    fill(180,215,255,160); textSize(12); textStyle(BOLD);
-    text('単', x+6, y+20);
-    fill(160,200,160,110); textSize(11); textStyle(NORMAL);
-    text('---', x+6, y+35);
-  }
-  // 連続モードベスト（右上）
-  if(st.bestEndlessRecord){
-    let br=st.bestEndlessRecord;
-    noStroke(); textAlign(RIGHT,TOP);
-    fill(100,200,255,220); textSize(12); textStyle(BOLD);
-    text('連', x+w-6, y+20);
-    fill(160,200,160,210); textSize(12); textStyle(NORMAL);
-    text(br.streak+'連', x+w-6, y+34);
-    fill(255,215,0,230); textSize(14); textStyle(BOLD);
-    text(br.score+'pt', x+w-6, y+50);
-  } else {
-    noStroke(); textAlign(RIGHT,TOP);
-    // 連ラベルは未スコアでも見やすく
-    fill(100,200,255,160); textSize(12); textStyle(BOLD);
-    text('連', x+w-6, y+20);
-    fill(160,200,160,110); textSize(11); textStyle(NORMAL);
-    text('---', x+w-6, y+35);
-  }
-  textAlign(CENTER,CENTER); textStyle(NORMAL);
-
-  // 絵文字・ステージ名・説明
-  noStroke(); textSize(24); text(st.emoji, x+w/2, y+h*0.48);
-  fill(hov?color(255,220,80):color(220,220,255)); textStyle(BOLD); textSize(hov?16:14);
-  text(st.name, x+w/2, y+h*0.70); textStyle(NORMAL);
-  fill(150,150,170); textSize(10); text(st.sub, x+w/2, y+h*0.86);
-  pop();
 }
 
 // カード枠のみ（テキストなし）
@@ -1855,9 +1726,10 @@ function physicsStep(){
       if(bc.blown) return;
       if(sqrt((gx-bc.x)**2+(gy-bc.y)**2)<bR){
         bc.blown=true;
-        bc.vx=g.vx*0.6+random(-5,5);
-        bc.vy=min(g.vy*0.4,-3)-random(3,8);
-        bc.va=random(-0.14,0.14);
+        // 上方向メイン＋左右ランダム少々＋強めの回転
+        bc.vx=random(-4,4);
+        bc.vy=-random(10,16);
+        bc.va=random(-0.18,0.18);
         spawnParts(bc.x,bc.y,color(210,170,130),14); shakeAmt=10; playObstacleHit(false);
       }
     });
@@ -1942,7 +1814,7 @@ function physicsStepLoop(){
     blastCustomers.forEach(bc=>{
       if(bc.blown) return;
       if(sqrt((gx-bc.x)**2+(gy-bc.y)**2)<bR){
-        bc.blown=true; bc.vx=pathSpeed*1.5+random(-5,5); bc.vy=-random(4,10); bc.va=random(-0.14,0.14);
+        bc.blown=true; bc.vx=random(-4,4); bc.vy=-random(10,16); bc.va=random(-0.18,0.18);
         spawnParts(bc.x,bc.y,color(210,170,130),14); shakeAmt=10; playObstacleHit(false);
       }
     });
@@ -2013,14 +1885,14 @@ function physicsStepLoop(){
 
   obs.forEach(o=>{ if(o.on&&dist(g.x,g.y+GLASS_H/2,o.x,o.y)<22) hitObs(o); });
 
-  if(pathT>loopExitIdx+10){
+  if(!blast500Mode && pathT>loopExitIdx+10){
     let hit=findHitCustomer();
     if(hit>=0){ deliverTo(hit); return; }
   }
 
   if(pathT>=n-3){ finishRound(); return; }
   if(pathT<=2&&pathSpeed<0){ resultMsg='😵 失速して戻った！'; roundOver(); return; }
-  if(abs(pathSpeed)<0.25&&travelDist>30){ finishRound(); return; }
+  if(!blast500Mode && abs(pathSpeed)<0.25&&travelDist>30){ finishRound(); return; }
 }
 
 // ================================================================
@@ -2287,7 +2159,7 @@ function mouseReleased(){
       {txt:'← ステージ選択', x:14+65, y:GAME_H-34, vx:0,vy:0,va:0,angle:0,blown:false,sz:12,col:[180,180,180]},  // [3]
       {txt:throwCount+'投目',                                        x:60,  y:56, vx:0,vy:0,va:0,angle:0,blown:false,sz:12,col:[180,180,180]},  // [4]
       {txt:gameMode==='endless'?'🔄 連続モード':'📍 単一モード',     x:68,  y:72, vx:0,vy:0,va:0,angle:0,blown:false,sz:11,col:gameMode==='endless'?[100,200,255]:[160,160,160]}, // [5]
-      // 右上（[5][6]）
+      // 右上（[6][7]）
       ...(gameMode==='endless'
         ? [{txt:'連続 '+streakCount+'回', x:GAME_W-60,y:22,vx:0,vy:0,va:0,angle:0,blown:false,sz:15,col:[255,180,60]}]
         : [
@@ -2312,8 +2184,8 @@ function mouseReleased(){
       g.vx=0; g.vy=0;
     }
   } else {
-    // blast500Mode時は必ず空中（地面に吸着しない）
-    g.airborne = blast500Mode ? true : g.vy<-1.5;
+    // blast500Mode時も通常と同じ発射挙動（ループステージ同様レールに乗れる）
+    g.airborne = g.vy<-1.5;
     if(!g.airborne) g.vy=0;
   }
   // 発射音（引っ張り量に応じて3段階）
