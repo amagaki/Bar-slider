@@ -72,7 +72,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.65
+// BAR SLIDER v1.673
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=26, ZONE_W=52;
@@ -365,7 +365,6 @@ let is500shot=false;      // 次の発射が500%ショットか
 let blast500Mode=false;   // 発射後の500%モード中
 // 500%モード時のカスタマー・バー小物吹っ飛びデータ
 let blastCustomers=[];    // [{x,y,vx,vy,va,angle,blown,data}]
-let blastBarParts=[];     // バーカウンターの破片
 let blastWords=[];
 let hadoukenTrail=[];
 let blastHoles=[];   // [{x, y, r}] カウンターに開いた穴
@@ -471,7 +470,7 @@ function setup(){
   initShelfBottles();
   loadRecords();
   // GA: ゲーム起動（タイトル画面ロード）
-  if(typeof gtag==='function') gtag('event','game_launch',{game_version:'1.65'});
+  if(typeof gtag==='function') gtag('event','game_launch',{game_version:'1.673'});
 }
 
 // ================================================================
@@ -550,7 +549,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.65', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.673', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -1237,7 +1236,7 @@ function initRound(){
   let cxs=[W*0.78,W*0.87,W*0.95], names=['おじさん','姉ちゃん','おっちゃん'];
   custs=cxs.map((cx,i)=>({x:cx,name:names[i],y:stageSY(cx),face:'😐'}));
   targetIdx=floor(random(custs.length));
-  dragging=false; parts=[]; resultMsg=''; floatingTexts=[]; vxHistory=[]; lastDeliverySuccess=false;
+  dragging=false; parts=[]; resultMsg=''; floatingTexts=[]; vxHistory=[]; lastDeliverySuccess=false; lastThrowBonus=0;
   chargeHoldFrames=0; is500shot=false; blast500Mode=false; blastCustomers=[]; blastWords=[]; hadoukenTrail=[]; blastHoles=[];
   initShelfBottles();
   S='AIM';
@@ -1410,13 +1409,17 @@ function drawCustomers(){
   custs.forEach((c,i)=>{
     let isTarget=i===targetIdx, sy=stageSY(c.x);
     push(); translate(c.x,sy-8);
-    fill(isTarget?color(75,52,128):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
-    fill(210,170,130); ellipse(0,-56,24,26);
+    fill(isTarget?color(105,72,188):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
+    fill(210,170,130); noStroke(); ellipse(0,-56,24,26);
     textSize(14); noStroke(); text(c.face,0,-56);
-    fill(165,165,165); textSize(9); text(c.name,0,-76);
+    fill(isTarget?color(255,230,120):color(185,185,185)); textSize(isTarget?12:10);
+    if(isTarget) textStyle(BOLD);
+    text(c.name,0,-76);
+    textStyle(NORMAL);
     if(isTarget&&S==='AIM'){
-      fill(255,215,0,38+sin(frameCount*0.1)*18); noStroke(); ellipse(0,-92,58,16);
-      fill(255,215,0,200); textSize(9); textStyle(BOLD); text('オーダー！',0,-92); textStyle(NORMAL);
+      let pls=sin(frameCount*0.1)*0.5+0.5;
+      fill(255,215,0,50+pls*30); noStroke(); ellipse(0,-96,90,24);
+      fill(255,215,0,220); textSize(14); textStyle(BOLD); text('オーダー！',0,-96); textStyle(NORMAL);
     }
     pop();
   });
@@ -1477,11 +1480,11 @@ function drawGlass(){
   beginShape(); vertex(-GLASS_W/2+1,GLASS_H-1); vertex(-GLASS_W/2-2+taper,GLASS_H-fh); vertex(GLASS_W/2+2-taper,GLASS_H-fh); vertex(GLASS_W/2-1,GLASS_H-1); endShape(CLOSE);
   fill(238,232,215,218); ellipse(0,GLASS_H-fh-1,GLASS_W-1,7);
   stroke(255,255,255,80); strokeWeight(1); noFill(); line(-GLASS_W/2-1,GLASS_H*0.12,-GLASS_W/2,GLASS_H*0.78);
-  // 酒量ラベル（グラスの上）
+  // 酒量ラベル（グラスのすぐ上）
   if(g.fillLabel){
     noStroke();
     fill(fc[0],fc[1],fc[2],210);
-    textSize(10); textStyle(BOLD);
+    textSize(14); textStyle(BOLD);
     text(g.fillLabel, 0, -10);
     textStyle(NORMAL);
   }
@@ -1503,7 +1506,7 @@ function drawGlass(){
     // 500%達成時は特別表示
     if(is500shot){
       let blink=sin(frameCount*0.5)*0.5+0.5;
-      fill(255,50+blink*50,0,230+blink*25); noStroke(); textSize(22); textStyle(BOLD);
+      fill(255,50+blink*50,0,230+blink*25); noStroke(); textSize(26); textStyle(BOLD);
       text('500%!!!', g.x, g.y-28); textStyle(NORMAL);
       // ショックウェーブ（広がる単発リング）
       let sw=sin(frameCount*0.3)*0.5+0.5;
@@ -1511,9 +1514,9 @@ function drawGlass(){
       noFill(); stroke(255,80,0, 200*(1-swR)); strokeWeight(3*(1-swR)+1);
       circle(g.x, g.y+GLASS_H/2, 30+swR*80);
     } else {
-      fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(14); textStyle(BOLD);
-      text(dispPct+'%', g.x, g.y-28); textStyle(NORMAL);
-      if(pct>=1.9){ fill(255,45,45,170+sin(frameCount*0.3)*60); textSize(11); text('MAX!', g.x, g.y-44); }
+      fill(red(pCol),green(pCol),blue(pCol),215); noStroke(); textSize(20); textStyle(BOLD);
+      text(dispPct+'%', g.x, g.y-30); textStyle(NORMAL);
+      if(pct>=1.9){ fill(255,45,45,170+sin(frameCount*0.3)*60); textSize(13); text('MAX!', g.x, g.y-52); }
     }
     // チャージ音
     let tier=pct<0.67?0:pct<1.34?1:pct<1.98?2:3;
@@ -1627,33 +1630,33 @@ function drawGameHUD(){
   let b1=blast500Mode&&blastWords[1]&&blastWords[1].blown;
   let b4=blast500Mode&&blastWords[4]&&blastWords[4].blown;
   let b5=blast500Mode&&blastWords[5]&&blastWords[5].blown;
-  if(!b0){ fill(255,215,0); noStroke(); textStyle(BOLD); textSize(16); textAlign(LEFT,TOP); text(st.emoji+' '+st.name, 18, 14); textStyle(NORMAL); }
-  if(!b1){ fill(255,255,255); textSize(15); textAlign(LEFT,TOP); text('SCORE  '+score, 18, 36); }
-  if(!b4){ fill(180,180,180); textSize(12); textAlign(LEFT,TOP); text(throwCount+'投目', 18, 56); }
-  if(!b5){ fill(gameMode==='endless'?color(100,200,255):color(160,160,160)); textSize(11); textAlign(LEFT,TOP);
-    text(gameMode==='endless'?'🔄 連続モード':'📍 単一モード', 18, 72); }
+  if(!b0){ fill(255,215,0); noStroke(); textStyle(BOLD); textSize(18); textAlign(LEFT,TOP); text(st.emoji+' '+st.name, 18, 14); textStyle(NORMAL); }
+  if(!b1){ fill(255,255,255); textSize(17); textAlign(LEFT,TOP); text('SCORE  '+score, 18, 38); }
+  if(!b4){ fill(180,180,180); textSize(14); textAlign(LEFT,TOP); text(throwCount+'投目', 18, 60); }
+  if(!b5){ fill(gameMode==='endless'?color(100,200,255):color(160,160,160)); textSize(13); textAlign(LEFT,TOP);
+    text(gameMode==='endless'?'🔄 連続モード':'📍 単一モード', 18, 78); }
   // 右上HUD（blast500Mode中はblownになったものを抑制）
   let b6=blast500Mode&&blastWords[6]&&blastWords[6].blown;
   let b7=blast500Mode&&blastWords[7]&&blastWords[7].blown;
   textAlign(RIGHT,TOP);
   if(gameMode==='endless'){
-    if(!b6){ fill(255,180,60); textSize(15); textStyle(BOLD); text('連続 '+streakCount+'回', GAME_W-18, 14); textStyle(NORMAL); }
+    if(!b6){ fill(255,180,60); textSize(17); textStyle(BOLD); text('連続 '+streakCount+'回', GAME_W-18, 14); textStyle(NORMAL); }
   } else {
     let hearts=''; for(let i=0;i<roundsCleared;i++) hearts+='🍺';
-    if(!b6){ fill(255,215,0); textSize(16); textStyle(BOLD); text(hearts||'―', GAME_W-18, 14); textStyle(NORMAL); }
-    if(!b7){ fill(180,180,180); textSize(12); text('あと'+(roundsNeeded-roundsCleared)+'回成功でクリア', GAME_W-18, 36); }
+    if(!b6){ fill(255,215,0); textSize(18); textStyle(BOLD); text(hearts||'―', GAME_W-18, 14); textStyle(NORMAL); }
+    if(!b7){ fill(180,180,180); textSize(14); text('あと'+(roundsNeeded-roundsCleared)+'回成功でクリア', GAME_W-18, 38); }
   }
 
   // 中央：オーダーテキスト
   let b2=blast500Mode&&blastWords[2]&&blastWords[2].blown;
   textAlign(CENTER,CENTER);
   if((S==='AIM'||blast500Mode) && !b2){
-    fill(255,255,255,220); textSize(15); textStyle(BOLD);
+    fill(255,255,255,230); textSize(18); textStyle(BOLD);
     text('オーダー: '+custs[targetIdx].name+' にビールを！', GAME_W/2, 26);
     textStyle(NORMAL);
   }
   if(S==='AIM'){
-    fill(180,180,180,160); textSize(13);
+    fill(180,180,180,160); textSize(14);
     text('グラスをクリック → 引っ張る → 離す', GAME_W/2, GAME_H-26);
   }
 
@@ -1684,11 +1687,21 @@ function drawOverlay(){
     }
   }
   if(S==='STAGE_CLEAR'){
-    fill(0,0,0,175); noStroke(); rect(GAME_W/2-260,GAME_H/2-96,520,192,16);
-    fill(100,255,120); textSize(32); textStyle(BOLD); text('🎉 STAGE CLEAR！',GAME_W/2,GAME_H/2-36); textStyle(NORMAL);
-    fill(255,215,0); textSize(18); text('SCORE: '+score,GAME_W/2,GAME_H/2+4);
-    fill(180,200,180); textSize(13); text(throwCount+'投でクリア',GAME_W/2,GAME_H/2+26);
-    fill(175,175,175); textSize(13); text('クリックでステージ選択へ',GAME_W/2,GAME_H/2+50);
+    let bonusH = (gameMode==='single' && lastThrowBonus>0) ? 40 : 0;
+    fill(0,0,0,175); noStroke(); rect(GAME_W/2-280,GAME_H/2-110,560,210+bonusH,16);
+    fill(100,255,120); textSize(32); textStyle(BOLD); text('🎉 STAGE CLEAR！',GAME_W/2,GAME_H/2-58); textStyle(NORMAL);
+    // 投数ボーナス（単一モードのみ・大きく表示）
+    let yOff=GAME_H/2-14;
+    if(gameMode==='single' && lastThrowBonus>0){
+      let blink=sin(frameCount*0.3)*0.5+0.5;
+      fill(255,140+blink*80,0,230+blink*25); textSize(22); textStyle(BOLD);
+      text('+'+lastThrowBonus.toLocaleString()+' 投数ボーナス！', GAME_W/2, yOff);
+      textStyle(NORMAL);
+      yOff+=32;
+    }
+    fill(255,215,0); textSize(18); text('SCORE: '+score.toLocaleString(), GAME_W/2, yOff);
+    fill(180,200,180); textSize(14); text(throwCount+'投でクリア', GAME_W/2, yOff+26);
+    fill(175,175,175); textSize(13); text('クリックでステージ選択へ', GAME_W/2, yOff+52);
   }
   if(S==='ENDLESS_END'){
     let st=STAGES[currentStage];
@@ -2004,6 +2017,12 @@ function checkStageEnd(){
   if(roundsCleared>=roundsNeeded){
     let st=STAGES[currentStage];
     st.cleared=true;
+    // 投数ボーナス加算（単一モードのみ）
+    lastThrowBonus=0;
+    if(gameMode==='single'){
+      lastThrowBonus=calcThrowBonus(throwCount);
+      score+=lastThrowBonus;
+    }
     let isNewRecord=false;
     if(!st.bestRecord){
       isNewRecord=true;
@@ -2021,7 +2040,7 @@ function checkStageEnd(){
     });
     S='STAGE_CLEAR'; playStageClear();
   } else {
-    // GA: ラウンド失敗（離脱率分析用）
+    // GA: ラウンド失敗・単一モードのみ到達（連続モードはendlessEndへ行くため）
     if(typeof gtag==='function') gtag('event','round_fail',{
       stage_id: currentStage, stage_name: STAGES[currentStage].name,
       throws_so_far: throwCount, rounds_cleared: roundsCleared
@@ -2050,6 +2069,16 @@ function endlessEnd(){
   });
   S='ENDLESS_END';
 }
+
+// 投数ボーナス（単一モードのみ）
+function calcThrowBonus(throws){
+  if(throws<=2)  return 10000;
+  if(throws<=4)  return 5000;
+  if(throws<=7)  return 2000;
+  if(throws<=10) return 1000;
+  return 0;
+}
+let lastThrowBonus=0; // STAGE_CLEAR表示用
 
 function obstacleStep(){ obs.forEach(o=>{ if(o.on)return; o.x+=o.vx; o.y+=o.vy; o.vy+=0.44; o.vx*=0.98; o.angle+=o.va; }); }
 function spawnParts(x,y,c,n=12){ for(let i=0;i<n;i++) parts.push({x,y,c,vx:random(-6,6),vy:random(-9,0.5),r:random(2,5),alpha:255}); }
@@ -2183,7 +2212,6 @@ function mouseReleased(){
       let sy=stageSY(c.x);
       return { x:c.x, y:sy-8, vx:0, vy:0, va:0, angle:0, blown:false, data:Object.assign({},c) };
     });
-    blastBarParts=[];
     hadoukenTrail=[];
     // HUDテキストオブジェクト化
     let st=STAGES[currentStage];
