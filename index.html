@@ -72,7 +72,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.70a
+// BAR SLIDER v1.71
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=32.5, ZONE_W=52;
@@ -549,7 +549,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:'グラスを引っ張って遊べるよ', x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.70a', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.71', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
   ];
 }
@@ -1564,6 +1564,8 @@ function avgSpeed(){
 function findHitCustomer(){
   let spd=avgSpeed();
   let best=-1, bestDist=Infinity;
+  // 空中（airborne）のグラスは判定しない：着地後のみ配達可能
+  if(g.airborne) return -1;
   custs.forEach((c,i)=>{
     let d=abs(g.x-c.x);
     if(d<ZONE_HIT && spd<DELIVER_SPEED && d<bestDist){ bestDist=d; best=i; }
@@ -1673,6 +1675,22 @@ function drawGameHUD(){
     textStyle(NORMAL);
   }
   pop();
+
+  // ── お試し速度表記（3か所） ──
+  {
+    let spd=loopMode ? abs(pathSpeed)*3 : abs(g.vx);
+    let spdTxt='speed: '+spd.toFixed(1);
+    noStroke();
+    // 上中央
+    fill(255,255,100,200); textSize(20); textAlign(CENTER,CENTER);
+    text(spdTxt, GAME_W/2, 52);
+    // 下中央
+    text(spdTxt, GAME_W/2, GAME_H-52);
+    // 右下
+    textAlign(RIGHT,BOTTOM);
+    text(spdTxt, GAME_W-18, GAME_H-18);
+    textAlign(CENTER,CENTER);
+  }
 }
 
 function drawOverlay(){
