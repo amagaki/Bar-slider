@@ -72,7 +72,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.825
+// BAR SLIDER v1.83
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=32.5, ZONE_W=52;
@@ -377,8 +377,12 @@ let titleDragging=false, tdStartX=0, tdStartY=0;
 let titleWords=[];
 
 // ---- ステージセレクト隠しグラス ----
-let stageGlass={x:0,y:0,vx:0,vy:0,active:false,gone:false,angle:0};
-let stageDragging=false, sgStartX=0, sgStartY=0;
+// ステージセレクト隠しグラス（複数対応）
+// baseFn: idle時の座標を返す関数、dragIdx: 現在ドラッグ中のグラスインデックス
+let stageGlasses=[];  // 初期化はinitStageGlasses()で
+let sgDragIdx=-1, sgStartX=0, sgStartY=0;
+// 後方互換：既存コードが stageGlass を参照する箇所のエイリアス
+// → 全て stageGlasses[0] に統一するため後で書き換え
 let stageWords=[];
 let stageGlassUnlocked=false;
 
@@ -467,6 +471,7 @@ function setup(){
   textAlign(CENTER,CENTER);
   makeStars();
   initTitleWords();
+  initStageGlasses();
   initShelfBottles();
   loadRecords();
   // GA: ゲーム起動（タイトル画面ロード）
@@ -716,7 +721,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:LL().meta.hint, x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.825', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.83', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
@@ -1090,6 +1095,7 @@ function updateStageWords(){
     }
   });
   // 全部吹っ飛んだ＆グラス解放済み → Thank you for playing! を追加
+  let anyActive=stageGlasses.some(sg=>sg.active);
   if(stageGlassUnlocked && stageWords.length>0 &&
      stageWords.every(w=>!w.alive) &&
      !stageWords.find(w=>w.kind==='thanks')){
@@ -1101,114 +1107,141 @@ function updateStageWords(){
   }
 }
 
-function checkStageWordHits(){
-  if(!stageGlass.active) return;
-  stageWords.forEach(w=>{
-    if(!w.alive) return;
-    let wx=w.x, wy=w.y;
-    let dx=stageGlass.x-wx, dy=stageGlass.y-wy;
-    let d=sqrt(dx*dx+dy*dy);
-    if(d < w.hitR){
-      w.alive=false;
-      let nx=dx/max(d,1), ny=dy/max(d,1);
-      w.vx=stageGlass.vx*0.5+nx*random(2,6);
-      w.vy=stageGlass.vy*0.3-random(1,6);
-      w.va=random(-0.09, 0.09);
-      if(w.kind==='thanks'){
-        playStageClear();
-        // GA: Thank you for playing! 吹っ飛ばし達成
-        if(typeof gtag==='function') gtag('event','thankyou_blown');
+function checkStageWordHits(sg){
+  // sg指定あり：そのグラスのみ、なし：全グラスを走査
+  let targets = sg ? [sg] : stageGlasses.filter(g=>g.active);
+  targets.forEach(tsg=>{
+    stageWords.forEach(w=>{
+      if(!w.alive) return;
+      let wx=w.x, wy=w.y;
+      let dx=tsg.x-wx, dy=tsg.y-wy;
+      let d=sqrt(dx*dx+dy*dy);
+      if(d < w.hitR){
+        w.alive=false;
+        let nx=dx/max(d,1), ny=dy/max(d,1);
+        w.vx=tsg.vx*0.5+nx*random(2,6);
+        w.vy=tsg.vy*0.3-random(1,6);
+        w.va=random(-0.09, 0.09);
+        if(w.kind==='thanks'){
+          playStageClear();
+          if(typeof gtag==='function') gtag('event','thankyou_blown');
+        } else playObstacleHit(w.kind==='neon_stage');
+        for(let i=0;i<5;i++) parts.push({
+          x:wx+random(-12,12), y:wy+random(-6,6),
+          c:color(w.col[0],w.col[1],w.col[2]),
+          vx:random(-5,5), vy:random(-6,0),
+          r:random(2,4), alpha:190
+        });
       }
-      else playObstacleHit(w.kind==='neon_stage');
-      for(let i=0;i<5;i++) parts.push({
-        x:wx+random(-12,12), y:wy+random(-6,6),
-        c:color(w.col[0],w.col[1],w.col[2]),
-        vx:random(-5,5), vy:random(-6,0),
-        r:random(2,4), alpha:190
-      });
-    }
+    });
   });
 }
 
 // グラスのベース位置：←タイトルとモードタブの間
-function stageGlassBaseX(){ return 228+sin(titleAnim*0.7)*22; }
-function stageGlassBaseY(){ return GAME_H*0.912+sin(titleAnim*1.1)*5; }
+// グラスのidle位置定義（インデックス順）
+const SG_BASES=[
+  // [0] 元のグラス: ←タイトルとモードタブの間
+  ()=>({x: 228+sin(titleAnim*0.7)*22,        y: GAME_H*0.912+sin(titleAnim*1.1)*5}),
+  // [1] 左中段
+  ()=>({x: 22+sin(titleAnim*0.9)*6,          y: GAME_H*0.52+sin(titleAnim*1.3)*8}),
+  // [2] 右中段
+  ()=>({x: GAME_W-22+sin(titleAnim*0.8)*6,   y: GAME_H*0.52+sin(titleAnim*1.2)*8}),
+  // [3] 下部中央右 (SE音量スライダーの左)
+  ()=>({x: 660+sin(titleAnim*1.0)*10,        y: GAME_H*0.912+sin(titleAnim*0.9)*5}),
+];
+
+function initStageGlasses(){
+  stageGlasses = SG_BASES.map(fn=>{
+    let p=fn(); return {x:p.x, y:p.y, vx:0, vy:0, active:false, gone:false, angle:0};
+  });
+}
+// 後方互換エイリアス（旧コードの stageGlass → stageGlasses[0]）
+function stageGlassBaseX(){ return SG_BASES[0]().x; }
+function stageGlassBaseY(){ return SG_BASES[0]().y; }
 
 function updateStageGlass(){
-  if(!stageGlass.active) return;
-  stageGlass.vy+=GRAVITY; stageGlass.vx*=AIR_FRICTION;
-  stageGlass.x+=stageGlass.vx; stageGlass.y+=stageGlass.vy;
-  stageGlass.angle=(stageGlass.angle||0)+stageGlass.vx*0.025;
-  checkStageWordHits();
-  if(stageGlass.y>GAME_H+60||stageGlass.x<-100||stageGlass.x>GAME_W+100){
-    stageGlass.gone=true; stageGlass.active=false;
-    setTimeout(()=>{ stageGlass={x:stageGlassBaseX(),y:stageGlassBaseY(),vx:0,vy:0,active:false,gone:false,angle:0}; },1200);
-  }
+  stageGlasses.forEach((sg,i)=>{
+    if(!sg.active) return;
+    sg.vy+=GRAVITY; sg.vx*=AIR_FRICTION;
+    sg.x+=sg.vx; sg.y+=sg.vy;
+    sg.angle=(sg.angle||0)+sg.vx*0.025;
+    checkStageWordHits(sg);
+    if(sg.y>GAME_H+60||sg.x<-100||sg.x>GAME_W+100){
+      sg.gone=true; sg.active=false;
+      let idx=i;
+      setTimeout(()=>{
+        let p=SG_BASES[idx]();
+        stageGlasses[idx]={x:p.x,y:p.y,vx:0,vy:0,active:false,gone:false,angle:0};
+      },1200);
+    }
+  });
 }
 
 function drawStageGlass(){
   if(!stageGlassUnlocked) return;
-  if(stageGlass.gone) return;
-  // アイドル時はゆらゆら
-  let gx=stageGlass.x, gy=stageGlass.y;
-  if(!stageGlass.active){
-    gx=stageGlassBaseX(); gy=stageGlassBaseY();
-    // 光るリング（注目演出）
-    let rp=sin(titleAnim*0.08)*0.5+0.5;
-    noFill(); stroke(255,180,60,30+rp*40); strokeWeight(1.2);
-    circle(gx, gy+GLASS_H/2, 36+rp*6);
-  }
-  push();
-  translate(gx, gy);
-  rotate(stageGlass.angle||0);
-  stroke(188,212,255,140); strokeWeight(1.5); noFill();
-  beginShape(); vertex(-GLASS_W/2,GLASS_H); vertex(-GLASS_W/2-3,0); vertex(GLASS_W/2+3,0); vertex(GLASS_W/2,GLASS_H); endShape(CLOSE);
-  let fh=GLASS_H*0.65; noStroke(); fill(212,152,32,160);
-  beginShape(); vertex(-GLASS_W/2+1,GLASS_H-1); vertex(-GLASS_W/2-1,GLASS_H-fh); vertex(GLASS_W/2+1,GLASS_H-fh); vertex(GLASS_W/2-1,GLASS_H-1); endShape(CLOSE);
-  fill(238,232,215,190); ellipse(0,GLASS_H-fh,GLASS_W-2,6);
-  // ドラッグ中UI
-  if(stageDragging){
-    let ddx=mouseX-sgStartX, ddy=mouseY-sgStartY;
-    let d=constrain(sqrt(ddx*ddx+ddy*ddy),0,MAX_DRAG);
-    let pct=constrain(d/(MAX_DRAG*0.5),0,2.0);
-    let pCol=pct<=1.0?lerpColor(color(50,220,100),color(255,200,0),pct):lerpColor(color(255,200,0),color(255,45,45),pct-1.0);
-    stroke(255,255,255,60); strokeWeight(1.5); line(0,GLASS_H/2,ddx-gx+stageGlass.x,ddy-gy+stageGlass.y);
-    // 射出方向矢印
-    let tx=-(ddx)*0.8, ty=GLASS_H/2-(ddy)*0.8;
-    stroke(red(pCol),green(pCol),blue(pCol),180); fill(red(pCol),green(pCol),blue(pCol),180); strokeWeight(2);
-    line(0,GLASS_H/2,tx,ty);
-    let ang=atan2(ty-GLASS_H/2,tx); push(); translate(tx,ty); rotate(ang); noStroke(); triangle(0,0,-10,-4,-10,4); pop();
-    noFill(); stroke(255,215,0,70); strokeWeight(1.2); circle(0,GLASS_H/2,d*0.7);
-    fill(red(pCol),green(pCol),blue(pCol),200); noStroke(); textSize(12); textStyle(BOLD);
-    text(floor(pct*100)+'%', 0, -14); textStyle(NORMAL);
-    let tier=pct<0.67?0:pct<1.34?1:pct<1.98?2:3;
-    if(tier>0 && tier>lastChargeTier) playCharge(tier);
-    lastChargeTier=tier;
-  }
-  pop();
+  stageGlasses.forEach((sg,gi)=>{
+    if(sg.gone) return;
+    let gx=sg.x, gy=sg.y;
+    if(!sg.active){
+      let p=SG_BASES[gi](); gx=p.x; gy=p.y;
+      let rp=sin(titleAnim*0.08)*0.5+0.5;
+      noFill(); stroke(255,180,60,30+rp*40); strokeWeight(1.2);
+      circle(gx, gy+GLASS_H/2, 36+rp*6);
+    }
+    push(); translate(gx, gy); rotate(sg.angle||0);
+    stroke(188,212,255,140); strokeWeight(1.5); noFill();
+    beginShape(); vertex(-GLASS_W/2,GLASS_H); vertex(-GLASS_W/2-3,0); vertex(GLASS_W/2+3,0); vertex(GLASS_W/2,GLASS_H); endShape(CLOSE);
+    let fh=GLASS_H*0.65; noStroke(); fill(212,152,32,160);
+    beginShape(); vertex(-GLASS_W/2+1,GLASS_H-1); vertex(-GLASS_W/2-1,GLASS_H-fh); vertex(GLASS_W/2+1,GLASS_H-fh); vertex(GLASS_W/2-1,GLASS_H-1); endShape(CLOSE);
+    fill(238,232,215,190); ellipse(0,GLASS_H-fh,GLASS_W-2,6);
+    // ドラッグ中UI（このグラスがドラッグ中なら）
+    if(sgDragIdx===gi){
+      let ddx=mouseX-sgStartX, ddy=mouseY-sgStartY;
+      let d=constrain(sqrt(ddx*ddx+ddy*ddy),0,MAX_DRAG);
+      let pct=constrain(d/(MAX_DRAG*0.5),0,2.0);
+      let pCol=pct<=1.0?lerpColor(color(50,220,100),color(255,200,0),pct):lerpColor(color(255,200,0),color(255,45,45),pct-1.0);
+      stroke(255,255,255,60); strokeWeight(1.5); line(0,GLASS_H/2,ddx,ddy);
+      let tx=-(ddx)*0.8, ty=GLASS_H/2-(ddy)*0.8;
+      stroke(red(pCol),green(pCol),blue(pCol),180); fill(red(pCol),green(pCol),blue(pCol),180); strokeWeight(2);
+      line(0,GLASS_H/2,tx,ty);
+      let ang=atan2(ty-GLASS_H/2,tx); push(); translate(tx,ty); rotate(ang); noStroke(); triangle(0,0,-10,-4,-10,4); pop();
+      noFill(); stroke(255,215,0,70); strokeWeight(1.2); circle(0,GLASS_H/2,d*0.7);
+      fill(red(pCol),green(pCol),blue(pCol),200); noStroke(); textSize(12); textStyle(BOLD);
+      text(floor(pct*100)+'%', 0, -14); textStyle(NORMAL);
+      let tier=pct<0.67?0:pct<1.34?1:pct<1.98?2:3;
+      if(tier>0 && tier>lastChargeTier) playCharge(tier);
+      lastChargeTier=tier;
+    }
+    pop();
+  });
 }
 
 function stageGlassPress(px,py){
-  if(!stageGlassUnlocked||stageGlass.active||stageGlass.gone) return false;
-  let gx=stageGlassBaseX(), gy=stageGlassBaseY();
-  let dx=px-gx, dy=py-(gy+GLASS_H/2);
-  if(sqrt(dx*dx+dy*dy)<52){ stageDragging=true; sgStartX=px; sgStartY=py; return true; }
+  if(!stageGlassUnlocked) return false;
+  for(let gi=0; gi<stageGlasses.length; gi++){
+    let sg=stageGlasses[gi];
+    if(sg.active||sg.gone) continue;
+    let p=SG_BASES[gi]();
+    let dx=px-p.x, dy=py-(p.y+GLASS_H/2);
+    if(sqrt(dx*dx+dy*dy)<52){ sgDragIdx=gi; sgStartX=px; sgStartY=py; return true; }
+  }
   return false;
 }
 
 function stageGlassRelease(){
-  if(!stageDragging) return;
-  stageDragging=false;
+  let gi2=sgDragIdx; sgDragIdx=-1;
+  if(gi2<0) return;
   let ddx=mouseX-sgStartX, ddy=mouseY-sgStartY;
   let d=sqrt(ddx*ddx+ddy*ddy);
   if(d<MIN_DRAG){ lastChargeTier=0; return; }
   let spd=constrain(d,MIN_DRAG,MAX_DRAG);
   let speed=map(spd,MIN_DRAG,MAX_DRAG,1.2,MAX_SPEED);
-  let gx=stageGlassBaseX(), gy=stageGlassBaseY();
-  stageGlass.x=gx; stageGlass.y=gy;
-  stageGlass.vx=-(ddx/d)*speed;
-  stageGlass.vy=-(ddy/d)*speed;
-  stageGlass.active=true;
+  let p=SG_BASES[gi2]();
+  let sg=stageGlasses[gi2];
+  sg.x=p.x; sg.y=p.y;
+  sg.vx=-(ddx/d)*speed;
+  sg.vy=-(ddy/d)*speed;
+  sg.active=true;
   playLaunch(map(spd,MIN_DRAG,MAX_DRAG,0,200));
   lastChargeTier=0;
 }
@@ -2306,7 +2339,7 @@ function mousePressed(){
     if(mouseX>10&&mouseX<110&&mouseY>14&&mouseY<52){ setLang('en'); playButton(); return; }
     if(mouseX>10&&mouseX<110&&mouseY>58&&mouseY<96){ setLang('ja'); playButton(); return; }
     let bw=240,bh=52,bx=GAME_W/2-120,by=GAME_H*0.68;
-    if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); titleDragging=false; stageGlassUnlocked=false; initStageWords(); SCREEN='STAGE_SELECT'; return; }
+    if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); titleDragging=false; stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; return; }
     // タイトルグラスのドラッグ開始
     if(!titleGlass.active && !titleGlass.gone){
       let dx=mouseX-titleGlass.x, dy=mouseY-titleGlass.y;
@@ -2324,7 +2357,7 @@ function mousePressed(){
     if(!stageGlassUnlocked &&
        abs(mouseX-GAME_W/2)<titleHitR && abs(mouseY-GAME_H*0.08)<22){
       stageGlassUnlocked=true;
-      stageGlass={x:stageGlassBaseX(),y:stageGlassBaseY(),vx:0,vy:0,active:false,gone:false,angle:0};
+      initStageGlasses();
       playCharge(3);
       return;
     }
@@ -2355,7 +2388,7 @@ function mousePressed(){
   // GAME
   // 戻るボタン
   let bw=130,bh=30,bx=14,by=GAME_H-46;
-  if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); stageGlassUnlocked=false; initStageWords(); SCREEN='STAGE_SELECT'; return; }
+  if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; return; }
 
   if(S==='RESULT'){
     if(gameMode==='endless'){
@@ -2366,7 +2399,7 @@ function mousePressed(){
     }
     return;
   }
-  if(S==='STAGE_CLEAR'||S==='ENDLESS_END'){ playButton(); stageGlassUnlocked=false; initStageWords(); SCREEN='STAGE_SELECT'; return; }
+  if(S==='STAGE_CLEAR'||S==='ENDLESS_END'){ playButton(); stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; return; }
   if(S!=='AIM') return;
 
   let dx=mouseX-g.x, dy=mouseY-(g.y+GLASS_H/2);
@@ -2376,7 +2409,7 @@ function mousePressed(){
 function mouseReleased(){
   volSliderRelease();
   // ステージセレクト隠しグラス射出
-  if(SCREEN==='STAGE_SELECT' && stageDragging){
+  if(SCREEN==='STAGE_SELECT' && sgDragIdx>=0){
     stageGlassRelease(); return;
   }
   // タイトルグラス射出
