@@ -72,7 +72,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.844
+// BAR SLIDER v1.91
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=32.5, ZONE_W=52;
@@ -94,6 +94,7 @@ let endlessIsNewRecord=false;
 let g={}, obs=[], custs=[], targetIdx=0;
 let shelfBottles=[];   // 棚のボトル（壊せる）
 let dragging=false, dStartX=0, dStartY=0;
+let mirrorMode=false;  // 左右反転モード
 let travelDist=0, parts=[], shakeAmt=0;
 let resultMsg='';
 let floatingTexts=[];  // 浮遊スコアテキスト [{x,y,vy,alpha,txt,col}]
@@ -427,7 +428,14 @@ const STAGES=[
 
 function smoothstep(e0,e1,x){ let t=constrain((x-e0)/(e1-e0),0,1); return t*t*(3-2*t); }
 function counterRight(){ return GAME_W-COUNTER_R_PAD; }
-function stageSY(x){ return STAGES[currentStage].sY(x); }
+function stageSY(x){
+  // mirrorMode時はカウンター内でx座標を反転してsYを取得
+  if(mirrorMode){
+    let sx = COUNTER_L + counterRight() - x;
+    return STAGES[currentStage].sY(sx);
+  }
+  return STAGES[currentStage].sY(x);
+}
 function obstH(type){ return type==='bottle'?38:16; }
 function sgn(v){ return v>=0?1:-1; }
 
@@ -437,27 +445,39 @@ function sgn(v){ return v>=0?1:-1; }
 function buildLoopPath(){
   let pts=[];
   let flatY=GAME_H*0.65;
-  let R=min(GAME_H*0.185, 110);   // ループ半径
+  let R=min(GAME_H*0.185, 110);
   let cx=GAME_W*0.50;
-  let cy=flatY-R;                 // ループ中心（フラットラインより R 上）
+  let cy=flatY-R;
   let step=3;
-
-  // 1. 左フラット  COUNTER_L → cx
-  for(let x=COUNTER_L; x<=cx; x+=step) pts.push({x, y:flatY});
-  loopEntryIdx=pts.length-1;
-
-  // 2. ループ円
-  // 進行方向（右向き）：底 → 右 → 上 → 左 → 底 (math clock wise = angle 減少)
-  // angle PI/2 (bottom) → decreasing full circle
   let nLoop=180;
-  for(let i=1; i<=nLoop; i++){
-    let a=HALF_PI - TWO_PI*(i/nLoop);
-    pts.push({ x: cx+R*cos(a), y: cy+R*sin(a) });
-  }
-  loopExitIdx=pts.length-1;
 
-  // 3. 右フラット  cx → counterRight()
-  for(let x=cx+step; x<=counterRight(); x+=step) pts.push({x, y:flatY});
+  if(!mirrorMode){
+    // 通常：左→右
+    // 1. 左フラット
+    for(let x=COUNTER_L; x<=cx; x+=step) pts.push({x, y:flatY});
+    loopEntryIdx=pts.length-1;
+    // 2. ループ（右向き：底→右→上→左→底）
+    for(let i=1; i<=nLoop; i++){
+      let a=HALF_PI - TWO_PI*(i/nLoop);
+      pts.push({ x: cx+R*cos(a), y: cy+R*sin(a) });
+    }
+    loopExitIdx=pts.length-1;
+    // 3. 右フラット
+    for(let x=cx+step; x<=counterRight(); x+=step) pts.push({x, y:flatY});
+  } else {
+    // mirror：右→左
+    // 1. 右フラット（逆向き）
+    for(let x=counterRight(); x>=cx; x-=step) pts.push({x, y:flatY});
+    loopEntryIdx=pts.length-1;
+    // 2. ループ（左向き：底→左→上→右→底、角度増加）
+    for(let i=1; i<=nLoop; i++){
+      let a=HALF_PI + TWO_PI*(i/nLoop);
+      pts.push({ x: cx+R*cos(a), y: cy+R*sin(a) });
+    }
+    loopExitIdx=pts.length-1;
+    // 3. 左フラット
+    for(let x=cx-step; x>=COUNTER_L; x-=step) pts.push({x, y:flatY});
+  }
 
   stagePath=pts;
 }
@@ -475,7 +495,7 @@ function setup(){
   initShelfBottles();
   loadRecords();
   // GA: ゲーム起動（タイトル画面ロード）
-  if(typeof gtag==='function') gtag('event','game_launch',{game_version:'1.80'});
+  if(typeof gtag==='function') gtag('event','game_launch',{game_version:'1.91'});
 }
 
 // ================================================================
@@ -517,6 +537,8 @@ const LANG = {
       se_volume:             '🔊 SE音量',
       score_reset:           'スコアリセット',
       score_reset_confirm:   '本当に？押して確定',
+      mirror_off: '👉 左利き',
+      mirror_on:  '👈 右利き',
       drag_hint:             '← drag',
       order_badge:           'オーダー！',
       stage_select_title:    'STAGE SELECT',
@@ -586,6 +608,8 @@ const LANG = {
       se_volume:             '🔊 Volume',
       score_reset:           'Reset Scores',
       score_reset_confirm:   'Sure? Tap to confirm',
+      mirror_off: '👉 Left-hand',
+      mirror_on:  '👈 Right-hand',
       drag_hint:             '← drag',
       order_badge:           'Order!',
       stage_select_title:    'STAGE SELECT',
@@ -725,7 +749,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:LL().meta.hint, x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.844', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v1.91', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
@@ -1064,6 +1088,11 @@ function initStageWords(){
   stageWords.push({ txt:floor(seVolume*100)+'%', x:VOL_X+VOL_W/2, y:VOL_Y+14,
     vx:0,vy:0,va:0,angle:0,alive:true, kind:'ui_text', sz:9, col:[140,140,160], hitR:36 });
 
+  // ─── 左右反転トグルテキスト（モードタブと同形式）───
+  stageWords.push({ txt:mirrorMode?LL().ui.mirror_on:LL().ui.mirror_off, x:RST_X-98, y:RST_Y+RST_H/2,
+    vx:0,vy:0,va:0,angle:0,alive:true, kind:'mirror_toggle', sz:12,
+    col:mirrorMode?[100,220,255]:[255,215,0], hitR:52 });
+
   // ─── スコアリセット テキスト ───
   stageWords.push({ txt:LL().ui.score_reset, x:RST_X+RST_W/2, y:RST_Y+RST_H/2,
     vx:0,vy:0,va:0,angle:0,alive:true, kind:'reset_text', sz:12, col:[220,140,140], hitR:46 });
@@ -1087,7 +1116,7 @@ function drawStageWords(){
       let baseAlpha = {
         card_clear:230, card_label:220, card_stat:210, card_score:230,
         card_dash:110, stage_emoji:255, stage_name:220, stage_sub:170,
-        btn_text:200, tab_text:230, ui_text:170, reset_text:220, card_stars:230
+        btn_text:200, tab_text:230, ui_text:170, reset_text:220, card_stars:230, mirror_toggle:230
       }[w.kind] || 200;
       let a = w.alive ? baseAlpha : baseAlpha*alpha_fade*0.7;
       fill(w.col[0],w.col[1],w.col[2], a); noStroke();
@@ -1298,6 +1327,13 @@ function drawStageSelect(){
   drawVolumeSliderBarOnly();
   // スコアリセットボタン（枠のみ）
   drawResetButtonFrameOnly();
+  // 左右反転トグルボタン枠（モードタブ風）
+  let mtx=RST_X-148, mty=RST_Y-2, mtw=100, mth=RST_H+4;
+  push();
+  stroke(mirrorMode?color(100,220,255):color(100,100,140), mirrorMode?220:100);
+  strokeWeight(mirrorMode?2:1);
+  fill(mirrorMode?color(0,30,55):color(15,15,30), mirrorMode?200:100);
+  rect(mtx,mty,mtw,mth, mirrorMode?[8,8,0,0]:[8,8,8,8]); pop();
 
   // リセット確認タイマー更新
   if(resetConfirmTimer>0){
@@ -1322,6 +1358,10 @@ function drawStageSelect(){
   // タブ下線（常に残る）
   stroke(modeIsEndless?color(100,200,255):color(255,215,0)); strokeWeight(2); noFill();
   line(tab1x, tabY+tabH, tab2x+tabW, tabY+tabH);
+  // mirror toggle下線
+  let mtCol=mirrorMode?color(100,220,255):color(255,215,0);
+  stroke(mtCol); strokeWeight(2); noFill();
+  line(mtx, mty+mth, mtx+100, mty+mth);
   pop();
 }
 
@@ -1425,6 +1465,7 @@ function drawResetButtonFrameOnly(){
   pop();
 }
 function startGame(idx){
+  // mirrorModeはループステージ対応済み
   currentStage=idx; roundsCleared=0; score=0; throwCount=0; streakCount=0; endlessIsNewRecord=false;
   stageGlassUnlocked=false;
   loopMode=STAGES[idx].isLoop;
@@ -1447,7 +1488,8 @@ function initRound(){
   ];
   let fl=fillLevels[floor(random(fillLevels.length))];
   let fillIdx=fillLevels.indexOf(fl);
-  g={x:130,y:0,vx:0,vy:0,angle:0,done:false,airborne:false,
+  let glassStartX = mirrorMode ? counterRight()-68 : 130;
+  g={x:glassStartX,y:0,vx:0,vy:0,angle:0,done:false,airborne:false,
      fillAmt:fl.amt, fillLabel:LL().fill[fillIdx]||'', fillColor:fl.color, fillIdx:fillIdx};
   if(loopMode){
     pathT=0; pathSpeed=0;
@@ -1462,21 +1504,23 @@ function initRound(){
   if(loopMode){
     let cx=W*0.50, R=min(GAME_H*0.185,110);
     obs=[
-      {type:'ashtray', x:cx-R-160, y:0,vx:0,vy:0,va:0,angle:0,on:true},  // ループ手前左
-      {type:'nuts',    x:cx-R-30,  y:0,vx:0,vy:0,va:0,angle:0,on:true},  // ループ直前
-      {type:'bottle',  x:cx+R+200, y:0,vx:0,vy:0,va:0,angle:0,on:true},  // ループ出口から遠め
+      {type:'ashtray', x:mirrorMode?cx+R+160:cx-R-160, y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'nuts',    x:mirrorMode?cx+R+30 :cx-R-30,  y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'bottle',  x:mirrorMode?cx-R-200:cx+R+200, y:0,vx:0,vy:0,va:0,angle:0,on:true},
     ];
     obs.forEach(o=>{ o.y=stageSY(o.x)-obstH(o.type); });
   } else {
     obs=[
-      {type:'ashtray',x:W*0.36,y:0,vx:0,vy:0,va:0,angle:0,on:true},
-      {type:'bottle', x:W*0.52,y:0,vx:0,vy:0,va:0,angle:0,on:true},
-      {type:'nuts',   x:W*0.67,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'ashtray',x:mirrorMode?W*0.64:W*0.36,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'bottle', x:mirrorMode?W*0.48:W*0.52,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'nuts',   x:mirrorMode?W*0.33:W*0.67,y:0,vx:0,vy:0,va:0,angle:0,on:true},
     ];
     obs.forEach(o=>{ o.y=stageSY(o.x)-obstH(o.type); });
   }
 
-  let cxs=[W*0.78,W*0.87,W*0.95], names=LL().customers;
+  let cxsBase=[W*0.78,W*0.87,W*0.95];
+  let cxs = mirrorMode ? cxsBase.map(x=>GAME_W-x).reverse() : cxsBase;
+  let names=LL().customers;
   custs=cxs.map((cx,i)=>({x:cx,name:names[i],y:stageSY(cx),face:'😐'}));
   targetIdx=floor(random(custs.length));
   dragging=false; parts=[]; resultMsg=''; floatingTexts=[]; vxHistory=[]; lastDeliverySuccess=false; lastThrowBonus=0; lastStars=0;
@@ -1552,10 +1596,12 @@ function drawLoopCounter(){
     g2.stroke(215,185,105,55); g2.strokeWeight(1); g2.noFill();
     g2.beginShape(); pts.forEach(p=>g2.vertex(p.x,p.y-2)); g2.endShape();
     g2.noStroke(); g2.fill(46,24,6);
+    // 左フラット床
     g2.beginShape(); g2.vertex(COUNTER_L,flatY+14);
     for(let x=COUNTER_L;x<=GAME_W*0.50-min(GAME_H*0.185,110)-2;x+=4) g2.vertex(x,flatY+14);
     g2.vertex(GAME_W*0.50-min(GAME_H*0.185,110)-2,GAME_H); g2.vertex(COUNTER_L,GAME_H); g2.endShape(CLOSE);
     g2.noStroke(); g2.fill(46,24,6);
+    // 右フラット床
     g2.beginShape(); g2.vertex(GAME_W*0.50+min(GAME_H*0.185,110)+2,flatY+14);
     for(let x=GAME_W*0.50+min(GAME_H*0.185,110)+2;x<=CR;x+=4) g2.vertex(x,flatY+14);
     g2.vertex(CR,GAME_H); g2.vertex(GAME_W*0.50+min(GAME_H*0.185,110)+2,GAME_H); g2.endShape(CLOSE);
@@ -1600,7 +1646,7 @@ function drawBottleShelf(){
 }
 
 function drawBarDetails(){
-  let tapX=COUNTER_L+28,tapY=stageSY(tapX)-2;
+  let tapX=mirrorMode?counterRight()-28:COUNTER_L+28, tapY=stageSY(tapX)-2;
   noStroke(); fill(72,68,62); rect(tapX-7,tapY-8,14,9,2);
   fill(145,130,105); rect(tapX-3,tapY-42,6,36,2);
   fill(38,85,145); rect(tapX-6,tapY-50,12,12,3); fill(55,120,195); rect(tapX-5,tapY-49,10,5,2);
@@ -1710,9 +1756,9 @@ function drawGlass(){
     // 下矢印ヒント（ドラッグ方向）
     fill(255,215,0, 80+ringPulse*80); noStroke();
     textSize(11);
-    text(LL().ui.drag_hint, g.x+36, g.y+GLASS_H/2+idleBounce);
+    text(LL().ui.drag_hint, mirrorMode?g.x-36:g.x+36, g.y+GLASS_H/2+idleBounce);
   }
-  if(S==='AIM'&&dragging){ let pull=constrain(dStartX-mouseX,0,45); dx=g.x-pull*0.22; }
+  if(S==='AIM'&&dragging){ let pull=constrain(mirrorMode?mouseX-dStartX:dStartX-mouseX,0,45); dx=g.x+pull*0.22*(mirrorMode?1:-1); }
   push(); translate(dx, g.y+idleBounce); rotate(g.angle);
   stroke(188,212,255,155); strokeWeight(1.5); noFill();
   beginShape(); vertex(-GLASS_W/2,GLASS_H); vertex(-GLASS_W/2-3,0); vertex(GLASS_W/2+3,0); vertex(GLASS_W/2,GLASS_H); endShape(CLOSE);
@@ -2042,7 +2088,7 @@ function physicsStep(){
       if(sqrt((gx-bc.x)**2+(gy-bc.y)**2)<bR){
         bc.blown=true;
         // 上方向メイン＋左右ランダム少々＋強めの回転
-        bc.vx=random(-4,4);
+        bc.vx=(mirrorMode?-1:1)*random(-4,4);
         bc.vy=-random(10,16);
         bc.va=random(-0.18,0.18);
         spawnParts(bc.x,bc.y,color(210,170,130),14); shakeAmt=10; playObstacleHit(false);
@@ -2110,8 +2156,10 @@ function physicsStep(){
       if(hit>=0){ deliverTo(hit); return; }
     }
     let CR=counterRight();
-    if(g.x>CR+10) finishRound();
-    else if(g.x<COUNTER_L+20&&travelDist>100) finishRound();
+    if(!mirrorMode && g.x>CR+10) finishRound();
+    else if(mirrorMode && g.x<COUNTER_L-10) finishRound();
+    else if(!mirrorMode && g.x<COUNTER_L+20&&travelDist>100) finishRound();
+    else if(mirrorMode && g.x>CR-20&&travelDist>200) finishRound();
     else if(!blast500Mode && abs(g.vx)<0.35&&travelDist>80) finishRound();
   }
 }
@@ -2155,7 +2203,9 @@ function physicsStepLoop(){
     g.x+=g.vx; g.y+=g.vy;
     travelDist+=abs(g.vx)+abs(g.vy);
     g.angle+=g.vx*0.018;
-    if(g.x<COUNTER_L-40||g.x>counterRight()+60||g.y>GAME_H+60){ finishRound(); return; }
+    let llBound=mirrorMode?COUNTER_L-300:COUNTER_L-40;
+    let rrBound=mirrorMode?counterRight()+1000:counterRight()+60;
+    if(g.x<llBound||g.x>rrBound||g.y>GAME_H+60){ finishRound(); return; }
 
     // パス着地判定：完全全点スキャン（v6オリジナル）
     // ループ面にも着地可能・g.vy>0（落下中）のみ判定
@@ -2163,7 +2213,7 @@ function physicsStepLoop(){
       for(let i=0; i<stagePath.length-1; i++){
         let px=stagePath[i].x, py=stagePath[i].y;
         if(abs(g.x-px)<8 && g.y>=py-GLASS_H && g.vy>0){
-          pathT=i; pathSpeed=g.vx*0.28;
+          pathT=i; pathSpeed=mirrorMode?-g.vx*0.28:g.vx*0.28;
           g.y=py-GLASS_H; g.vx=0; g.vy=0; g.airborne=false;
           shakeAmt=5; spawnParts(g.x,g.y+GLASS_H,color(180,160,255),6); playLand();
           return;
@@ -2180,9 +2230,11 @@ function physicsStepLoop(){
   let iCurr=floor(constrain(pathT,0,n-2));
   let iNext=min(iCurr+1,n-1);
 
-  let slopeDelta=(stagePath[iNext].y - stagePath[iCurr].y) * SLOPE_FACTOR * 0.6;
-  pathSpeed+=slopeDelta;
-  pathSpeed*=FRICTION;
+  if(!blast500Mode){
+    let slopeDelta=(stagePath[iNext].y - stagePath[iCurr].y) * SLOPE_FACTOR * 0.6;
+    pathSpeed+= slopeDelta;  // mirrorMode問わず同じ（重力はy座標差で決まる）
+    pathSpeed*=FRICTION;
+  }
 
   pathT+=pathSpeed;
   pathT=constrain(pathT,0,n-1);
@@ -2193,20 +2245,26 @@ function physicsStepLoop(){
   g.x=stagePath[idx].x;
   g.y=stagePath[idx].y-GLASS_H;
 
-  let i2=min(idx+1,n-1);
-  let dx2=stagePath[i2].x-stagePath[idx].x;
-  let dy2=stagePath[i2].y-stagePath[idx].y;
-  g.angle=lerp(g.angle,atan2(dy2,dx2),0.18);
+  // mirrorMode時はパスが逆方向なので進行方向ベクトルも逆
+  let i2=min(idx+1,n-1), i0=max(idx-1,0);
+  let fwd= mirrorMode
+    ? {x:stagePath[i0].x-stagePath[idx].x, y:stagePath[i0].y-stagePath[idx].y}
+    : {x:stagePath[i2].x-stagePath[idx].x, y:stagePath[i2].y-stagePath[idx].y};
+  g.angle=lerp(g.angle,atan2(fwd.y,fwd.x),0.18);
 
   obs.forEach(o=>{ if(o.on&&dist(g.x,g.y+GLASS_H/2,o.x,o.y)<22) hitObs(o); });
 
+  // ループ出口後のデリバー判定（mirror時もloopExitIdx基準でOK）
   if(!blast500Mode && pathT>loopExitIdx+10){
     let hit=findHitCustomer();
     if(hit>=0){ deliverTo(hit); return; }
   }
 
   if(pathT>=n-3){ finishRound(); return; }
-  if(pathT<=2&&pathSpeed<0){ resultMsg=LL().result.stalled; roundOver(); return; }
+  // mirrorMode時はパス末端が左端なので、pathT>=n-3で末端判定
+  // 後退は通常と同じく pathSpeed の符号で判定
+  let backCond = mirrorMode ? (pathT<=2&&pathSpeed>0&&travelDist>30) : (pathT<=2&&pathSpeed<0&&travelDist>10);
+  if(backCond){ resultMsg=LL().result.stalled; roundOver(); return; }
   if(!blast500Mode && abs(pathSpeed)<0.25&&travelDist>30){ finishRound(); return; }
 }
 
@@ -2263,15 +2321,19 @@ function finishRound(){
   }
   if(loopMode){
     if(g.airborne && g.y>GAME_H)              resultMsg=LL().result.fell_floor;
-    else if(g.airborne && g.x>counterRight()) resultMsg=LL().result.fell_right;
-    else if(g.airborne && g.x<COUNTER_L-40)  resultMsg=LL().result.fell_left;
+    else if(!mirrorMode&&g.airborne && g.x>counterRight()) resultMsg=LL().result.fell_right;
+    else if(mirrorMode &&g.airborne && g.x<COUNTER_L-40)   resultMsg=LL().result.fell_right;
+    else if(!mirrorMode&&g.airborne && g.x<COUNTER_L-40)  resultMsg=LL().result.fell_left;
+    else if(mirrorMode &&g.airborne && g.x>counterRight()) resultMsg=LL().result.fell_left;
     else if(pathT>=stagePath.length-3)        resultMsg=LL().result.loop_out;
     else if(abs(pathSpeed)<0.25)              resultMsg=LL().result.loop_stop;
     else                                       resultMsg=LL().result.not_reached;
   } else {
     if(g.y>GAME_H)              resultMsg=LL().result.fell_floor;
-    else if(g.x>counterRight()) resultMsg=LL().result.fell_right;
-    else if(g.x<COUNTER_L+30)  resultMsg=LL().result.fell_left;
+    else if(!mirrorMode&&g.x>counterRight()) resultMsg=LL().result.fell_right;
+    else if(mirrorMode&&g.x<COUNTER_L-10)   resultMsg=LL().result.fell_right;
+    else if(!mirrorMode&&g.x<COUNTER_L+30)  resultMsg=LL().result.fell_left;
+    else if(mirrorMode&&g.x>counterRight()-30) resultMsg=LL().result.fell_left;
     else                         resultMsg=LL().result.not_reached;
   }
   custs[targetIdx].face='😤';
@@ -2442,6 +2504,15 @@ function mousePressed(){
       let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+28);
       if(mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH){ playButton(); startGame(i); }
     });
+    // 左右反転トグル
+    let mtx2=RST_X-148, mty2=RST_Y-2;
+    if(mouseX>mtx2&&mouseX<mtx2+100&&mouseY>mty2&&mouseY<mty2+RST_H+4){
+      mirrorMode=!mirrorMode; playButton();
+      // stageWordsを全リセットせず、mirror_toggleのwordだけ更新
+      let tw=stageWords.find(w=>w.kind==='mirror_toggle');
+      if(tw){ tw.txt=mirrorMode?LL().ui.mirror_on:LL().ui.mirror_off; tw.col=mirrorMode?[100,220,255]:[255,215,0]; tw.alive=true; }
+      return;
+    }
     // ← タイトル（左下）
     let bw=120,bh=34,bx=18,by=GAME_H*0.895;
     if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){
@@ -2536,7 +2607,7 @@ function mouseReleased(){
     is500shot=false; chargeHoldFrames=0;
   }
 
-  // 引き方向の逆ベクトルで射出（ループ・通常共通）
+  // 引き方向の逆ベクトルで射出（mirrorMode時はvx反転）
   g.vx=-(ddx/d)*speed;
   g.vy=-(ddy/d)*speed;
 
@@ -2544,7 +2615,9 @@ function mouseReleased(){
     if(blast500Mode || g.vy<-1.5){
       g.airborne=true;
     } else {
-      let horizComp=-(ddx/d);
+      // mirrorMode時：右にドラッグ→ddx>0→horizComp正→pathSpeed正→パスを前進
+      // 通常  ：左にドラッグ→ddx<0→horizComp正→pathSpeed正→パスを前進
+      let horizComp=mirrorMode?(ddx/d):-(ddx/d);
       pathSpeed=horizComp*speed*0.38;
       g.vx=0; g.vy=0;
     }
