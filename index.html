@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>🍺 BAR SLIDER</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap" rel="stylesheet">
 
   <!-- OGP / Twitter Card -->
   <meta property="og:title" content="BAR SLIDER">
@@ -87,7 +90,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v2.00a7
+// BAR SLIDER v2.00a8
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=32.5, ZONE_W=52;
@@ -796,17 +799,17 @@ function initTitleWords(){
       kind:'neon', sz:72, col:[255,120,0], hitR:140 },
     { txt:LL().meta.subtitle, x:GAME_W/2, y:GAME_H*0.42, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'italic', sz:18, col:[210,170,100], hitR:260 },
-    { txt:'PLAY START',       x:GAME_W/2, y:GAME_H*0.68+26, vx:0,vy:0,va:0, angle:0, alive:true,
-      kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
+    { txt:'PLAY START',       x:GAME_W/2, y:GAME_H*0.67+29, vx:0,vy:0,va:0, angle:0, alive:true,
+      kind:'button_label', sz:22, col:[60,30,0], hitR:90 },
     { txt:LL().meta.hint, x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v2.00a7', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v2.00a8', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
-      kind:'lang_btn', sz:20, col:lang==='en'?[255,215,0]:[140,140,140], hitR:50, langKey:'en' },
+      kind:'lang_btn', sz:20, col:lang==='en'?[60,30,0]:[160,160,160], hitR:50, langKey:'en' },
     { txt:'日本語', x:60, y:77, vx:0,vy:0,va:0, angle:0, alive:true,
-      kind:'lang_btn', sz:20, col:lang==='ja'?[255,215,0]:[140,140,140], hitR:50, langKey:'ja' },
+      kind:'lang_btn', sz:20, col:lang==='ja'?[60,30,0]:[160,160,160], hitR:50, langKey:'ja' },
   ];
 }
 
@@ -855,7 +858,17 @@ function drawAndUpdateTitleWords(pulse){
     rotate(w.angle);
     if(w.kind==='neon'){
       let a=w.alive?pulse:0.6;
-      for(let i=7;i>0;i--){ fill(w.col[0],w.col[1],w.col[2],i*16*a); noStroke(); textSize(w.sz+i*0.8); text(w.txt,0,0); }
+      // コミカルフォントで影付き描画（グロー効果も追加）
+      push();
+      textFont('Dela Gothic One');
+      // グロー
+      for(let i=4;i>0;i--){ fill(w.col[0],w.col[1],w.col[2],i*20*a); noStroke(); textSize(w.sz+i*1.5); text(w.txt,0,0); }
+      // 影
+      fill(80,30,0,180*a); textSize(w.sz); text(w.txt,4,5);
+      // 本体
+      fill(w.col[0],w.col[1],w.col[2],240*a); text(w.txt,0,0);
+      textFont('sans-serif');
+      pop();
     } else if(w.kind==='lang_btn'){
       let isActive = (w.langKey===lang);
       let alpha_fade2 = w.alive ? 1.0 : constrain(map(w.y, GAME_H*0.5, GAME_H+60, 1.0, 0.0), 0, 1);
@@ -866,8 +879,10 @@ function drawAndUpdateTitleWords(pulse){
       fill(w.col[0],w.col[1],w.col[2], w.alive?(180+sin(titleAnim)*40):160);
       noStroke(); textStyle(ITALIC); textSize(w.sz); text(w.txt,0,0); textStyle(NORMAL);
     } else if(w.kind==='button_label'){
-      fill(w.col[0],w.col[1],w.col[2], w.alive?200:180);
-      noStroke(); textStyle(BOLD); textSize(w.sz); text(w.txt,0,0); textStyle(NORMAL);
+      push(); textFont('Dela Gothic One');
+      fill(w.col[0],w.col[1],w.col[2], w.alive?240:180);
+      noStroke(); textSize(w.sz); text(w.txt,0,0);
+      textFont('sans-serif'); pop();
     } else if(w.kind==='hint'){
       // ヒントテキスト：点滅なし・固定輝度
       fill(w.col[0],w.col[1],w.col[2], w.alive?190:120);
@@ -1007,6 +1022,35 @@ function checkShelfBottleHits(){
   });
 }
 
+// コミカルフォントで影付きテキストを描画
+function comicText(txt, x, y, sz, col, shadowCol=[60,30,0], shadowOffset=3){
+  push();
+  // 影
+  fill(shadowCol[0],shadowCol[1],shadowCol[2],200);
+  textFont('Dela Gothic One');
+  textSize(sz); noStroke();
+  text(txt, x+shadowOffset, y+shadowOffset);
+  // 本体
+  fill(col[0],col[1],col[2]);
+  text(txt, x, y);
+  textFont('sans-serif');
+  pop();
+}
+
+// 黄色いコミカルボタンを描画（枠のみ）
+function drawYellowButton(x, y, w, h, hov){
+  push();
+  // 外側グロー
+  if(hov){ fill(255,220,60,40); noStroke(); rect(x-5,y-5,w+10,h+10,16); }
+  // ボタン本体：黄色グラデ風（上側明るく）
+  noStroke(); fill(200,140,10,220); rect(x+2,y+4,w-4,h-4,12); // 影
+  fill(hov?color(255,220,50):color(245,185,20),240); rect(x,y,w,h,12);
+  fill(255,240,120,100); rect(x+4,y+3,w-8,h*0.45,8); // ハイライト
+  // 枠線
+  stroke(180,120,5,200); strokeWeight(2); noFill(); rect(x,y,w,h,12);
+  pop();
+}
+
 function drawGameBgFallback(){
   // drawingContext直接操作をpush/popで囲み、p5.js状態を汚染しない
   push();
@@ -1054,13 +1098,12 @@ function drawTitleScreen(){
   ['en','ja'].forEach((l,i)=>{
     let bx=10, by=14+i*44, bw=100, bh=38;
     let isActive=lang===l;
-    push();
-    stroke(isActive?color(255,215,0):color(100,100,100), isActive?220:100);
-    strokeWeight(isActive?2:1);
-    fill(isActive?color(40,32,0):color(15,15,25), isActive?190:80);
-    rect(bx,by,bw,bh,7);
-
-    pop();
+    let hovL=mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh;
+    if(isActive) drawYellowButton(bx,by,bw,bh,hovL);
+    else {
+      push(); stroke(120,120,120,120); strokeWeight(1.5);
+      fill(15,15,25,100); rect(bx,by,bw,bh,7); pop();
+    }
   });
 
   // 文字オブジェクトを描画・物理更新
@@ -1093,14 +1136,10 @@ function drawTitleScreen(){
     lastChargeTier=tier;
   }
 
-  // PLAY START ボタン枠だけ描画（ラベルはwordオブジェクトが担当）
-  let bw=240,bh=52,bx=GAME_W/2-120,by=GAME_H*0.68;
+  // PLAY START ボタン（黄色スタイル）
+  let bw=260,bh=58,bx=GAME_W/2-130,by=GAME_H*0.67;
   let hovBtn=mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh;
-  push();
-  if(hovBtn){ fill(255,180,0,38); noStroke(); rect(bx-4,by-4,bw+8,bh+8,14); }
-  stroke(255,180,0, hovBtn?230:150); strokeWeight(hovBtn?2.5:1.5);
-  fill(255,180,0, hovBtn?32:16); rect(bx,by,bw,bh,10);
-  pop();
+  drawYellowButton(bx,by,bw,bh,hovBtn);
 }
 
 function drawAnimGlass(x,y,angle=0){
@@ -1138,7 +1177,7 @@ function initStageWords(){
 
   // ─── タイトル ───
   stageWords.push({ txt:LL().ui.stage_select_title, x:GAME_W/2, y:GAME_H*0.08,
-    vx:0,vy:0,va:0,angle:0,alive:true, kind:'neon_stage', sz:34, col:[80,200,255], hitR:130 });
+    vx:0,vy:0,va:0,angle:0,alive:true, kind:'neon_stage', sz:36, col:[255,160,20], hitR:130 });
 
   // ─── 各カード ───
   STAGES.forEach((st,i)=>{
@@ -1195,7 +1234,7 @@ function initStageWords(){
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_emoji', sz:24, col:[255,255,255], hitR:cardW*0.30 });
     // ステージ名（中央）
     stageWords.push({ txt:ls.name, x:mx, y:cy+98,
-      vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_name', sz:18, col:[255,240,200], hitR:cardW*0.40 });
+      vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_name', sz:19, col:[255,160,20], hitR:cardW*0.40 });
     // 説明（中央下部）
     stageWords.push({ txt:ls.sub, x:mx, y:cy+128,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_sub', sz:10, col:[220,200,160], hitR:cardW*0.36 });
@@ -1203,7 +1242,7 @@ function initStageWords(){
 
   // ─── ← タイトル テキスト ───
   stageWords.push({ txt:LL().ui.back_title, x:18+60, y:GAME_H*0.895+17,
-    vx:0,vy:0,va:0,angle:0,alive:true, kind:'btn_text', sz:13, col:[160,160,160], hitR:55 });
+    vx:0,vy:0,va:0,angle:0,alive:true, kind:'btn_text', sz:13, col:[60,30,0], hitR:55 });
 
   // ─── モードタブ テキスト ───
   let tabW=160, tabY=GAME_H*0.895, tab1x=GAME_W/2-tabW-4, tab2x=GAME_W/2+4;
@@ -1237,7 +1276,14 @@ function drawStageWords(){
     rotate(w.angle);
     if(w.kind==='neon_stage'){
       let a=w.alive?0.9:0.5*alpha_fade;
-      for(let i=7;i>0;i--){ fill(w.col[0],w.col[1],w.col[2],i*16*a); noStroke(); textSize(w.sz+i*0.6); text(w.txt,0,0); }
+      push(); textFont('Dela Gothic One');
+      // 影
+      fill(60,30,0,180*a); textSize(w.sz); noStroke(); text(w.txt,3,4);
+      // グロー
+      for(let i=3;i>0;i--){ fill(w.col[0],w.col[1],w.col[2],i*22*a); textSize(w.sz+i*1.2); text(w.txt,0,0); }
+      // 本体
+      fill(w.col[0],w.col[1],w.col[2],240*a); textSize(w.sz); text(w.txt,0,0);
+      textFont('sans-serif'); pop();
     } else if(w.kind==='thanks'){
       // ゴールドネオン風
       let a=w.alive?(0.7+sin(titleAnim*1.4)*0.3):0.5*alpha_fade;
@@ -1250,13 +1296,15 @@ function drawStageWords(){
       }[w.kind] || 200;
       let a = w.alive ? baseAlpha : baseAlpha*alpha_fade*0.7;
       fill(w.col[0],w.col[1],w.col[2], a); noStroke();
-      if(w.kind==='stage_name'||w.kind==='card_clear'||w.kind==='card_score'||w.kind==='tab_text'||w.kind==='card_label'||w.kind==='stage_emoji'||w.kind==='card_stars'){
-        textStyle(BOLD);
-      }
+      let useComicFont = (w.kind==='stage_name'||w.kind==='card_score'||w.kind==='card_stars');
+      if(useComicFont) textFont('Dela Gothic One');
+      else if(w.kind==='stage_emoji') {}  // 絵文字はフォント変更しない
+      else if(w.kind==='card_clear'||w.kind==='tab_text'||w.kind==='card_label') textStyle(BOLD);
       let align = w.anchor==='right' ? RIGHT : (w.anchor==='left' ? LEFT : CENTER);
       textAlign(align, CENTER);
       textSize(w.sz); text(w.txt, 0, 0);
       textStyle(NORMAL); textAlign(CENTER,CENTER);
+      if(useComicFont) textFont('sans-serif');
     }
     pop();
   });
@@ -1478,8 +1526,8 @@ function drawStageSelect(){
   drawParticles();
 
   // ← タイトルボタン（枠のみ）
-  let bw=120,bh=34,bx=18,by=GAME_H*0.895;
-  drawButtonFrameOnly(bx,by,bw,bh,mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh,[150,150,150]);
+  let bw=120,bh=36,bx=18,by=GAME_H*0.893;
+  drawYellowButton(bx,by,bw,bh,mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh);
 
   // SE音量スライダー（バーのみ）
   drawVolumeSliderBarOnly();
