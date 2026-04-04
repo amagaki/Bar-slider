@@ -87,7 +87,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v2.00a5
+// BAR SLIDER v2.00a6
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=32.5, ZONE_W=52;
@@ -456,9 +456,9 @@ function stageSY(x){
 }
 function obstH(type){
   if(type==='bottle') return 38;
-  if(type==='wine1'||type==='wine2'||type==='wine3') return 44;
-  if(type==='tumbler') return 28;
-  if(type==='shot') return 24;
+  // グラス系はy=カウンター面に設定し、描画側で上に伸ばす
+  if(type==='wine1'||type==='wine2'||type==='wine3') return 0;
+  if(type==='tumbler'||type==='shot') return 0;
   return 16;
 }
 function sgn(v){ return v>=0?1:-1; }
@@ -526,6 +526,7 @@ function preload(){
   loadImg('c3Normal', 'assets/char_ojichan_normal.png');
   loadImg('c3Happy',  'assets/char_ojichan_happy.png');
   loadImg('bottles',  'assets/bottles.png');
+  loadImg('kanban',   'assets/kanban.png');
 }
 
 function setup(){
@@ -776,23 +777,7 @@ function draw(){
   }
   if(shakeAmt>0.4) translate(-ox,-oy);
   drawCursor();
-  // ── 診断オーバーレイ（確認後に削除） ──
-  if(SCREEN==='GAME'){
-    let diagLines=[
-      'bgGame: '+(imgOK('bgGame')?'OK':'FAIL'),
-      'bottles: '+(imgOK('bottles')?'OK':'FAIL'),
-      'c1Normal: '+(imgOK('c1Normal')?'OK':'FAIL'),
-      'bgTitle: '+(imgOK('bgTitle')?'OK':'FAIL'),
-    ];
-    push(); textAlign(LEFT,TOP); textSize(11); noStroke();
-    fill(0,0,0,160); rect(GAME_W-130,2,128,68,4);
-    diagLines.forEach((l,i)=>{
-      let ok=l.includes('OK');
-      fill(ok?color(100,255,100):color(255,100,100));
-      text(l, GAME_W-125, 8+i*16);
-    });
-    pop();
-  }
+
 }
 
 // ================================================================
@@ -815,7 +800,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:LL().meta.hint, x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v2.00a5', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v2.00a6', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
@@ -1164,22 +1149,22 @@ function initStageWords(){
 
     // CLEARバッジ
     if(st.cleared){
-      stageWords.push({ txt:'✓ CLEAR', x:cx+6, y:cy+5+5,
-        vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_clear', sz:11, col:[100,230,100], hitR:50, anchor:'left' });
+      stageWords.push({ txt:'✓ CLEAR', x:cx+22, y:cy+47,
+        vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_clear', sz:11, col:[150,255,150], hitR:50, anchor:'left' });
     }
     // 単 ラベル（左上）
-    stageWords.push({ txt:LL().ui.single_abbr, x:cx+10, y:cy+20+5,
+    stageWords.push({ txt:LL().ui.single_abbr, x:cx+22, y:cy+55,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_label', sz:12,
       col:[180,215,255], hitR:36, anchor:'left' });
     if(st.cleared&&st.bestRecord){
-      stageWords.push({ txt:LL().hud.throws_stat(st.bestRecord.throws), x:cx+10, y:cy+35+5,
+      stageWords.push({ txt:LL().hud.throws_stat(st.bestRecord.throws), x:cx+22, y:cy+66,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stat', sz:12, col:[160,200,160], hitR:36, anchor:'left' });
-      stageWords.push({ txt:st.bestRecord.score+'pt', x:cx+10, y:cy+50+5,
+      stageWords.push({ txt:st.bestRecord.score+'pt', x:cx+22, y:cy+79,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_score', sz:14, col:[255,215,0], hitR:42, anchor:'left' });
       // 単一モード星（scoreの下）
       if(st.bestRecord.stars){
         let ss='★'.repeat(st.bestRecord.stars)+'☆'.repeat(3-st.bestRecord.stars);
-        stageWords.push({ txt:ss, x:cx+10, y:cy+66+5,
+        stageWords.push({ txt:ss, x:cx+22, y:cy+92,
           vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stars', sz:13, col:[255,215,0], hitR:40, anchor:'left' });
       }
     } else {
@@ -1187,18 +1172,18 @@ function initStageWords(){
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_dash', sz:11, col:[160,200,160], hitR:36, anchor:'left' });
     }
     // 連 ラベル（右上）
-    stageWords.push({ txt:LL().ui.endless_abbr, x:cx+cardW-10, y:cy+20+5,
+    stageWords.push({ txt:LL().ui.endless_abbr, x:cx+cardW-22, y:cy+55,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_label', sz:12, col:[100,200,255], hitR:36, anchor:'right' });
     if(st.bestEndlessRecord){
       let br=st.bestEndlessRecord;
-      stageWords.push({ txt:LL().hud.streak_stat(br.streak), x:cx+cardW-10, y:cy+34+5,
+      stageWords.push({ txt:LL().hud.streak_stat(br.streak), x:cx+cardW-22, y:cy+66,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stat', sz:12, col:[160,200,160], hitR:36, anchor:'right' });
-      stageWords.push({ txt:br.score+'pt', x:cx+cardW-10, y:cy+50+5,
+      stageWords.push({ txt:br.score+'pt', x:cx+cardW-22, y:cy+79,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_score', sz:14, col:[255,215,0], hitR:42, anchor:'right' });
       // 連続モード星（scoreの下）
       if(br.stars && br.stars>0){
         let ss='★'.repeat(br.stars)+'☆'.repeat(3-br.stars);
-        stageWords.push({ txt:ss, x:cx+cardW-10, y:cy+66+5,
+        stageWords.push({ txt:ss, x:cx+cardW-22, y:cy+92,
           vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stars', sz:13, col:[255,215,0], hitR:40, anchor:'right' });
       }
     } else {
@@ -1206,14 +1191,14 @@ function initStageWords(){
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_dash', sz:11, col:[100,200,255], hitR:36, anchor:'right' });
     }
     // 絵文字（中央上部・大きく）
-    stageWords.push({ txt:st.emoji, x:mx, y:cy+cardH*0.40,
+    stageWords.push({ txt:st.emoji, x:mx, y:cy+62,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_emoji', sz:24, col:[255,255,255], hitR:cardW*0.30 });
     // ステージ名（中央）
-    stageWords.push({ txt:ls.name, x:mx, y:cy+cardH*0.66,
-      vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_name', sz:15, col:[220,220,255], hitR:cardW*0.40 });
+    stageWords.push({ txt:ls.name, x:mx, y:cy+88,
+      vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_name', sz:15, col:[255,240,200], hitR:cardW*0.40 });
     // 説明（中央下部）
-    stageWords.push({ txt:ls.sub, x:mx, y:cy+cardH*0.83,
-      vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_sub', sz:10, col:[150,150,170], hitR:cardW*0.36 });
+    stageWords.push({ txt:ls.sub, x:mx, y:cy+110,
+      vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_sub', sz:10, col:[220,200,160], hitR:cardW*0.36 });
   });
 
   // ─── ← タイトル テキスト ───
@@ -1559,13 +1544,27 @@ function volSliderRelease(){
 }
 
 // カード枠のみ（テキストなし）
+// 看板画像のsrc座標定数
+const KANBAN_SW=800, KANBAN_SH=390;
+// 板エリア割合: x=65-750(0.081-0.938), y=112-375(0.287-0.962)
+
 function drawStageCardFrameOnly(x,y,w,h,st,hov){
   push();
-  let bc=st.cleared?[100,230,100]:hov?[255,200,60]:[80,80,120];
-  if(hov){ fill(255,200,60,18); noStroke(); rect(x-3,y-3,w+6,h+6,14); }
-  stroke(bc[0],bc[1],bc[2],hov?220:140); strokeWeight(hov?2:1.5);
-  fill(12,10,28,200); rect(x,y,w,h,10);
-  // ★はstageWordsが担当（吹っ飛ばし対応）
+  if(imgOK('kanban')){
+    // ホバー時は明るく
+    if(hov) tint(255,240,200,245); else noTint();
+    imageMode(CORNER);
+    image(imgs.kanban, x, y, w, h, 0, 0, KANBAN_SW, KANBAN_SH);
+    noTint();
+    // ホバー時の薄いゴールドオーバーレイ
+    if(hov){ fill(255,200,60,22); noStroke(); rect(x,y,w,h,4); }
+  } else {
+    // フォールバック：旧rect描画
+    let bc=st.cleared?[100,230,100]:hov?[255,200,60]:[80,80,120];
+    if(hov){ fill(255,200,60,18); noStroke(); rect(x-3,y-3,w+6,h+6,14); }
+    stroke(bc[0],bc[1],bc[2],hov?220:140); strokeWeight(hov?2:1.5);
+    fill(12,10,28,200); rect(x,y,w,h,10);
+  }
   pop();
 }
 
@@ -1912,18 +1911,18 @@ function renderObs(o){
     if(!drawGlassObsSprite(GLASS_SPRITES[o.type], o.y)){
       // フォールバック：グラス形状をp5.jsで描画
       if(o.type==='tumbler'||o.type==='shot'){
-        // ロックグラス・ショットグラス
+        // ロックグラス・ショットグラス（下端y=0）
         let h=o.type==='shot'?20:26, w=o.type==='shot'?10:14;
         fill(200,225,245,160); stroke(150,185,210); strokeWeight(1);
         beginShape(); vertex(-w/2,0); vertex(-w/2+1,-h); vertex(w/2-1,-h); vertex(w/2,0); endShape(CLOSE);
         fill(180,215,240,80); noStroke(); rect(-w/2+2,-h+2,w-4,h*0.4,1);
       } else {
-        // ワイングラス
+        // ワイングラス（下端y=0）
         fill(210,228,245,150); stroke(160,190,215); strokeWeight(1);
-        ellipse(0,-30,14,8);
-        beginShape(); vertex(-7,-30); vertex(-3,-14); vertex(3,-14); vertex(7,-30); endShape(CLOSE);
-        rect(-1.5,-14,3,12);
-        ellipse(0,-2,12,4);
+        ellipse(0,-32,14,8);
+        beginShape(); vertex(-7,-32); vertex(-3,-16); vertex(3,-16); vertex(7,-32); endShape(CLOSE);
+        rect(-1.5,-16,3,14);
+        ellipse(0,0,12,4);
       }
     }
   } else if(o.type==='ashtray'){
