@@ -1716,8 +1716,7 @@ function drawTargetZone(){
   fill(255,215,0,155+pls*65); noStroke(); textSize(17); text('▼',tc.x,stageSY(tc.x)-(typeof CHAR_H!=='undefined'?CHAR_H:26)-6-pls*6);
 }
 
-// キャラクター描画サイズ定数
-const CHAR_W=110, CHAR_H=110;
+const CHAR_H=110;  // キャラクター表示高さ（横幅はアスペクト比で自動計算）
 
 function drawCustImage(cx, sy, c, isTarget, alpha=255){
   let key = (c.happy ? c.imgHappy : c.imgNormal) || c.imgNormal;
@@ -1729,10 +1728,12 @@ function drawCustImage(cx, sy, c, isTarget, alpha=255){
     textSize(14); noStroke(); text(c.face,0,-56);
     return;
   }
-  // 画像の下端をカウンター面に合わせる
+  // 画像の下端をカウンター面に合わせる（アスペクト比維持）
+  let aspect = img.width / img.height;
+  let cw = CHAR_H * aspect;
   imageMode(CENTER);
   drawingContext.globalAlpha = alpha/255;
-  image(img, 0, -CHAR_H/2, CHAR_W, CHAR_H);
+  image(img, 0, -CHAR_H/2, cw, CHAR_H);
   drawingContext.globalAlpha = 1.0;
   imageMode(CORNER);
 }
