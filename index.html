@@ -1428,19 +1428,46 @@ let resetConfirm=false;   // スコアリセット確認フラグ
 let resetConfirmTimer=0; // 確認タイマー（フレーム数）
 
 function drawStageSelect(){
-  // ステージカード（枠のみ：テキストは全てstageWords）
   let cols=3, cardW=min(GAME_W*0.28,240), cardH=floor(cardW*0.80);
   let gapX=(GAME_W-cardW*cols)/(cols+1), startY=GAME_H*0.215;
   hoverStage=-1;
+
+  // ── 描画順: ロープ全部 → 上段看板 → 下段看板 → テキスト ──
+
+  // 【1】全カードのロープを最背面に描画（画面最上部から）
+  // 新kanban rope位置: 左ロープ x≈cardW*0.33, 右ロープ x≈cardW*0.67
   STAGES.forEach((st,i)=>{
     let col=i%cols, row=floor(i/cols);
+    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+28);
+    let rx1=cx+cardW*0.33, rx2=cx+cardW*0.67;
+    push();
+    stroke(140,100,55); strokeWeight(3); noFill();
+    line(rx1, 0, rx1, cy+2);  // 画面最上部からカード上端まで
+    line(rx2, 0, rx2, cy+2);
+    pop();
+  });
+
+  // 【2】上段看板（row=0）
+  STAGES.forEach((st,i)=>{
+    let col=i%cols, row=floor(i/cols);
+    if(row!==0) return;
     let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+28);
     let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
     if(hov) hoverStage=i;
     drawStageCardFrameOnly(cx,cy,cardW,cardH,st,hov);
   });
 
-  // 文字オブジェクト（常に描画・更新）
+  // 【3】下段看板（row=1）
+  STAGES.forEach((st,i)=>{
+    let col=i%cols, row=floor(i/cols);
+    if(row!==1) return;
+    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+28);
+    let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
+    if(hov) hoverStage=i;
+    drawStageCardFrameOnly(cx,cy,cardW,cardH,st,hov);
+  });
+
+  // 文字オブジェクト（最前面：STAGE SELECTも含む）
   drawStageWords();
   updateStageWords();
   updateStageGlass();
