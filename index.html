@@ -6,7 +6,7 @@
   <title>🍺 BAR SLIDER</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&display=swap" rel="stylesheet">
 
   <!-- OGP / Twitter Card -->
   <meta property="og:title" content="BAR SLIDER">
@@ -874,14 +874,14 @@ function drawAndUpdateTitleWords(pulse){
       noStroke(); textStyle(ITALIC); textSize(w.sz); text(w.txt,0,0); textStyle(NORMAL);
     } else if(w.kind==='button_label'){
       // 黄色ボタン上なので濃い茶色テキスト
-      push(); textFont('Dela Gothic One');
+      push(); textFont('Mochiy Pop One');
       drawingContext.save();
       drawingContext.globalAlpha = w.alive?1.0:0.7;
-      drawingContext.font = `bold ${w.sz}px 'Dela Gothic One', sans-serif`;
+      drawingContext.font = `${w.sz}px 'Mochiy Pop One', sans-serif`;
       drawingContext.textAlign='center'; drawingContext.textBaseline='middle';
       drawingContext.lineJoin='round';
       drawingContext.strokeStyle='rgb(140,70,0)';
-      drawingContext.lineWidth=3;
+      drawingContext.lineWidth=1.5;
       drawingContext.strokeText(w.txt,0,0);
       drawingContext.fillStyle='rgb(60,25,0)';
       drawingContext.fillText(w.txt,0,0);
@@ -1035,7 +1035,7 @@ function gradientComicText(txt, sz, topCol=[255,225,30], botCol=[255,110,0], str
   grad.addColorStop(1, `rgb(${botCol[0]},${botCol[1]},${botCol[2]})`);
   let sw = Math.max(3, sz*0.09);
   drawingContext.save();
-  drawingContext.font = `${sz}px 'Dela Gothic One', sans-serif`;
+  drawingContext.font = `${sz}px 'Mochiy Pop One', sans-serif`;
   drawingContext.textAlign = 'center';
   drawingContext.textBaseline = 'middle';
   drawingContext.lineJoin = 'round';
@@ -1531,6 +1531,10 @@ function drawStageSelect(){
     drawStageCardFrameOnly(cx,cy,cardW,cardH,st,i===hoverStage,true);
   });
 
+  // ← タイトルボタン（stageWordsより先に描画してテキストが前面に）
+  let bw=120,bh=36,bx=18,by=GAME_H*0.893;
+  drawYellowButton(bx,by,bw,bh,mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh);
+
   // 【4】テキスト最前面
   drawStageWords();
   updateStageWords();
@@ -1539,10 +1543,6 @@ function drawStageSelect(){
   // グラス・パーティクル
   drawStageGlass();
   drawParticles();
-
-  // ← タイトルボタン（枠のみ）
-  let bw=120,bh=36,bx=18,by=GAME_H*0.893;
-  drawYellowButton(bx,by,bw,bh,mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh);
 
   // SE音量スライダー（バーのみ）
   drawVolumeSliderBarOnly();
