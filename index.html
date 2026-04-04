@@ -1143,28 +1143,28 @@ function initStageWords(){
   // ─── 各カード ───
   STAGES.forEach((st,i)=>{
     let col=i%cols, row=floor(i/cols);
-    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+28);
+    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+ROW_GAP);
     let mx=cx+cardW/2;
     let ls=LL().stages[i];
 
     // CLEARバッジ
     if(st.cleared){
-      stageWords.push({ txt:'✓ CLEAR', x:cx+22, y:cy+36,
+      stageWords.push({ txt:'✓ CLEAR', x:cx+22, y:cy+12,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_clear', sz:11, col:[150,255,150], hitR:50, anchor:'left' });
     }
     // 単 ラベル（左上）
-    stageWords.push({ txt:LL().ui.single_abbr, x:cx+22, y:cy+48,
+    stageWords.push({ txt:LL().ui.single_abbr, x:cx+22, y:cy+24,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_label', sz:12,
       col:[180,215,255], hitR:36, anchor:'left' });
     if(st.cleared&&st.bestRecord){
-      stageWords.push({ txt:LL().hud.throws_stat(st.bestRecord.throws), x:cx+22, y:cy+62,
+      stageWords.push({ txt:LL().hud.throws_stat(st.bestRecord.throws), x:cx+22, y:cy+38,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stat', sz:12, col:[160,200,160], hitR:36, anchor:'left' });
-      stageWords.push({ txt:st.bestRecord.score+'pt', x:cx+22, y:cy+76,
+      stageWords.push({ txt:st.bestRecord.score+'pt', x:cx+22, y:cy+52,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_score', sz:14, col:[255,215,0], hitR:42, anchor:'left' });
       // 単一モード星（scoreの下）
       if(st.bestRecord.stars){
         let ss='★'.repeat(st.bestRecord.stars)+'☆'.repeat(3-st.bestRecord.stars);
-        stageWords.push({ txt:ss, x:cx+22, y:cy+90,
+        stageWords.push({ txt:ss, x:cx+22, y:cy+66,
           vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stars', sz:13, col:[255,215,0], hitR:40, anchor:'left' });
       }
     } else {
@@ -1172,18 +1172,18 @@ function initStageWords(){
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_dash', sz:11, col:[160,200,160], hitR:36, anchor:'left' });
     }
     // 連 ラベル（右上）
-    stageWords.push({ txt:LL().ui.endless_abbr, x:cx+cardW-22, y:cy+48,
+    stageWords.push({ txt:LL().ui.endless_abbr, x:cx+cardW-22, y:cy+24,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_label', sz:12, col:[100,200,255], hitR:36, anchor:'right' });
     if(st.bestEndlessRecord){
       let br=st.bestEndlessRecord;
-      stageWords.push({ txt:LL().hud.streak_stat(br.streak), x:cx+cardW-22, y:cy+62,
+      stageWords.push({ txt:LL().hud.streak_stat(br.streak), x:cx+cardW-22, y:cy+38,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stat', sz:12, col:[160,200,160], hitR:36, anchor:'right' });
-      stageWords.push({ txt:br.score+'pt', x:cx+cardW-22, y:cy+76,
+      stageWords.push({ txt:br.score+'pt', x:cx+cardW-22, y:cy+52,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_score', sz:14, col:[255,215,0], hitR:42, anchor:'right' });
       // 連続モード星（scoreの下）
       if(br.stars && br.stars>0){
         let ss='★'.repeat(br.stars)+'☆'.repeat(3-br.stars);
-        stageWords.push({ txt:ss, x:cx+cardW-22, y:cy+90,
+        stageWords.push({ txt:ss, x:cx+cardW-22, y:cy+66,
           vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stars', sz:13, col:[255,215,0], hitR:40, anchor:'right' });
       }
     } else {
@@ -1191,11 +1191,11 @@ function initStageWords(){
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_dash', sz:11, col:[100,200,255], hitR:36, anchor:'right' });
     }
     // 絵文字（中央上部・大きく）
-    stageWords.push({ txt:st.emoji, x:mx, y:cy+68,
+    stageWords.push({ txt:st.emoji, x:mx, y:cy+58,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_emoji', sz:24, col:[255,255,255], hitR:cardW*0.30 });
     // ステージ名（中央）
-    stageWords.push({ txt:ls.name, x:mx, y:cy+96,
-      vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_name', sz:15, col:[255,240,200], hitR:cardW*0.40 });
+    stageWords.push({ txt:ls.name, x:mx, y:cy+92,
+      vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_name', sz:18, col:[255,240,200], hitR:cardW*0.40 });
     // 説明（中央下部）
     stageWords.push({ txt:ls.sub, x:mx, y:cy+120,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_sub', sz:10, col:[220,200,160], hitR:cardW*0.36 });
@@ -1428,42 +1428,57 @@ let resetConfirm=false;   // スコアリセット確認フラグ
 let resetConfirmTimer=0; // 確認タイマー（フレーム数）
 
 function drawStageSelect(){
-  let cols=3, cardW=min(GAME_W*0.28,240), cardH=floor(cardW*0.80);
-  let gapX=(GAME_W-cardW*cols)/(cols+1), startY=GAME_H*0.215;
+  // cardH = 板エリアの高さ, ロープは上方に kanban画像内のロープ比率でオーバーフロー
+  const CARD_W=280, CARD_H=150, ROW_GAP=24;
+  const ROPE_H=floor(CARD_H*(159/215));  // 111px: 板とロープの比率に基づく
+  const K_DRAW_H=CARD_H+ROPE_H;           // 261px: kanban全体の描画高さ
+  const K_DRAW_W=floor(K_DRAW_H*(500/420)); // 310px: アスペクト比維持
+  const gapX=(GAME_W-CARD_W*3)/4;         // 25px
+  const startY=floor(ROPE_H)+12;          // 123px: row0ロープが y=12から始まる
+  let cols=3, cardW=CARD_W, cardH=CARD_H;
   hoverStage=-1;
+  let gapXc=gapX;
 
-  // ── 描画順: ロープ全部 → 上段看板 → 下段看板 → テキスト ──
-
-  // 【1】全カードのロープを最背面に描画（画面最上部から）
-  // 新kanban rope位置: 左ロープ x≈cardW*0.33, 右ロープ x≈cardW*0.67
+  // クリック判定用変数の計算（mousePressed内と共有）
+  // hoverStageの更新
   STAGES.forEach((st,i)=>{
     let col=i%cols, row=floor(i/cols);
-    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+28);
-    let rx1=cx+cardW*0.33, rx2=cx+cardW*0.67;
-    push();
-    stroke(140,100,55); strokeWeight(3); noFill();
-    line(rx1, 0, rx1, cy+2);  // 画面最上部からカード上端まで
-    line(rx2, 0, rx2, cy+2);
-    pop();
-  });
-
-  // 【2】上段看板（row=0）
-  STAGES.forEach((st,i)=>{
-    let col=i%cols, row=floor(i/cols);
-    if(row!==0) return;
-    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+28);
+    let cx=gapXc+col*(cardW+gapXc), cy=startY+row*(cardH+ROW_GAP);
     let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
     if(hov) hoverStage=i;
-    drawStageCardFrameOnly(cx,cy,cardW,cardH,st,hov);
   });
 
-  // 【3】下段看板（row=1）
+  // 【1】下段看板（row=1）のロープ部分を最背面に描画
+  // kanban画像のロープが上段看板の後ろを通るよう、先に下段を描く
   STAGES.forEach((st,i)=>{
     let col=i%cols, row=floor(i/cols);
     if(row!==1) return;
-    let cx=gapX+col*(cardW+gapX), cy=startY+row*(cardH+28);
+    let cx=gapXc+col*(cardW+gapXc), cy=startY+row*(cardH+ROW_GAP);
+    let kx=cx-floor((K_DRAW_W-cardW)/2), ky=cy-ROPE_H;
+    if(imgOK('kanban')){
+      push(); imageMode(CORNER);
+      // ロープ部分のみ描画（板は後で描く）
+      let ropeSrcH=floor(KANBAN_SH*(ROPE_H/K_DRAW_H));
+      image(imgs.kanban, kx, ky, K_DRAW_W, ROPE_H, 0, 0, KANBAN_SW, ropeSrcH);
+      pop();
+    }
+  });
+
+  // 【2】上段看板（row=0）を全体描画
+  STAGES.forEach((st,i)=>{
+    let col=i%cols, row=floor(i/cols);
+    if(row!==0) return;
+    let cx=gapXc+col*(cardW+gapXc), cy=startY+row*(cardH+ROW_GAP);
     let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
-    if(hov) hoverStage=i;
+    drawStageCardFrameOnly(cx,cy,cardW,cardH,st,hov);
+  });
+
+  // 【3】下段看板（row=1）の板部分を描画（ロープは【1】で描画済み）
+  STAGES.forEach((st,i)=>{
+    let col=i%cols, row=floor(i/cols);
+    if(row!==1) return;
+    let cx=gapXc+col*(cardW+gapXc), cy=startY+row*(cardH+ROW_GAP);
+    let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
     drawStageCardFrameOnly(cx,cy,cardW,cardH,st,hov);
   });
 
@@ -1582,8 +1597,10 @@ function drawStageCardFrameOnly(x,y,w,h,st,hov){
     if(hov) tint(255,240,200,245); else noTint();
     imageMode(CORNER);
     // ロープをカード上にはみ出させ板をカード内に収める
-    let kH=h+75, kW=floor(kH*(500/420));
-    let kX=x-floor((kW-w)/2), kY=y-55;
+    // ROPE_H と K_DRAW_W は drawStageSelect内定数と揃える
+    let ropeH2=floor(h*(159/215));
+    let kH=h+ropeH2, kW=floor(kH*(500/420));
+    let kX=x-floor((kW-w)/2), kY=y-ropeH2;
     image(imgs.kanban, kX, kY, kW, kH, 0, 0, KANBAN_SW, KANBAN_SH);
     noTint();
     // ホバー時の薄いゴールドオーバーレイ
@@ -2731,9 +2748,9 @@ function mousePressed(){
     if(mouseX>tab1x&&mouseX<tab1x+tabW&&mouseY>tabY&&mouseY<tabY+tabH){ gameMode='single'; playButton(); return; }
     if(mouseX>tab2x&&mouseX<tab2x+tabW&&mouseY>tabY&&mouseY<tabY+tabH){ gameMode='endless'; playButton(); return; }
     // ステージカード
-    let cols=3,cardW=min(GAME_W*0.28,240),cardH=cardW*0.62,gapX=(GAME_W-cardW*cols)/(cols+1),startY=GAME_H*0.215;
+    const cols=3,cardW=280,cardH=150,ROW_GAP=24,gapX=(GAME_W-cardW*cols)/4,startY=floor(150*(159/215))+12;
     STAGES.forEach((st,i)=>{
-      let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+28);
+      let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+ROW_GAP);
       if(mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH){ playButton(); startGame(i); }
     });
     // 左右反転トグル
