@@ -511,6 +511,7 @@ function preload(){
   imgs.c2Happy  = loadImage('assets/char_neesan_happy.png',   noop, noop);
   imgs.c3Normal = loadImage('assets/char_ojichan_normal.png', noop, noop);
   imgs.c3Happy  = loadImage('assets/char_ojichan_happy.png',  noop, noop);
+  imgs.bottles  = loadImage('assets/bottles.png', noop, noop);
 }
 
 function setup(){
@@ -866,6 +867,36 @@ function drawAndUpdateTitleWords(pulse){
 // SHELF BOTTLES（壊せる棚ボトル）
 // ================================================================
 const SY1=GAME_H*0.25, SY2=GAME_H*0.31;
+
+// ボトルスプライトシート座標定義（行0-2の瓶のみ・検出座標使用）
+const BOTTLE_SPRITES = [
+  // 行0：背の高い瓶
+  {sx:47,  sy:38,  sw:77, sh:218},
+  {sx:225, sy:38,  sw:58, sh:218},
+  {sx:385, sy:38,  sw:69, sh:218},
+  {sx:564, sy:38,  sw:57, sh:218},
+  {sx:724, sy:38,  sw:69, sh:218},
+  {sx:894, sy:38,  sw:69, sh:218},
+  {sx:1053,sy:38,  sw:80, sh:218},
+  {sx:1226,sy:38,  sw:69, sh:218},
+  // 行1：丸瓶・中型
+  {sx:37,  sy:342, sw:94, sh:171},
+  {sx:205, sy:342, sw:92, sh:171},
+  {sx:391, sy:342, sw:59, sh:171},
+  {sx:558, sy:342, sw:68, sh:171},
+  {sx:711, sy:342, sw:88, sh:171},
+  {sx:885, sy:342, sw:78, sh:171},
+  {sx:1051,sy:342, sw:85, sh:171},
+  {sx:1223,sy:342, sw:86, sh:171},
+  // 行2：小瓶のみ（グラス類を除く）
+  {sx:55,  sy:580, sw:63, sh:188},
+  {sx:220, sy:580, sw:66, sh:188},
+  {sx:597, sy:580, sw:61, sh:188},
+  {sx:761, sy:580, sw:60, sh:188},
+  {sx:923, sy:580, sw:64, sh:188},
+  {sx:1096,sy:580, sw:64, sh:188},
+  {sx:1266,sy:580, sw:73, sh:188},
+];
 const SHELF_BXS1=[0.17,0.24,0.30,0.37,0.44,0.51,0.58,0.65,0.72,0.79,0.85];
 const SHELF_BXS2=[0.20,0.28,0.36,0.46,0.56,0.66,0.74,0.82];
 const BOTTLE_COLS=[[18,65,28],[72,14,8],[15,42,72],[80,55,10],[35,18,75],[12,68,55],[90,22,18],[28,60,80],[45,30,90],[60,80,15],[80,30,55]];
@@ -875,10 +906,13 @@ function initShelfBottles(){
   let allBxs=[...SHELF_BXS1.map(bx=>({bx,sy:SY1})), ...SHELF_BXS2.map(bx=>({bx,sy:SY2}))];
   allBxs.forEach(({bx,sy},i)=>{
     let h=44+sin(i*1.7)*14, w=8+sin(i*0.9)*2.5;
+    // スプライトをランダムに割り当て（偏りを防ぐためシャッフル）
+    let sprIdx=i%BOTTLE_SPRITES.length;
     shelfBottles.push({
       x:bx*GAME_W, baseY:sy, y:sy,
       vx:0, vy:0, va:0, angle:0,
       h, w, col:BOTTLE_COLS[i%BOTTLE_COLS.length],
+      sprIdx,
       on:true, alpha:255
     });
   });
@@ -887,20 +921,34 @@ function initShelfBottles(){
 function drawShelfBottles(){
   shelfBottles.forEach((b,i)=>{
     if(!b.on && b.alpha<=0) return;
-    if(!b.on) drawingContext.globalAlpha=b.alpha/255;
+    let globalA = (!b.on) ? b.alpha/255 : 1.0;
     push();
     translate(b.x, b.y);
     rotate(b.angle);
-    let c=b.col;
-    noStroke(); fill(c[0],c[1],c[2],210);
-    rect(-b.w/2,-b.h, b.w, b.h*0.72, 2);
-    rect(-2.5, -b.h*0.96, 5, b.h*0.32, 1);
-    fill(c[0]+18,c[1]+18,c[2]+18,80);
-    rect(-b.w/2+1,-b.h*0.52,b.w-2,b.h*0.22,1);
-    fill(220,205,175,95);
-    rect(-b.w/2+0.5,-b.h*0.48,b.w-1,b.h*0.26,1);
+    if(imgs.bottles && b.sprIdx !== undefined){
+      // スプライトシートから描画
+      let sp=BOTTLE_SPRITES[b.sprIdx];
+      let dispH=b.h*1.4;  // 表示高さ（棚に合わせたスケール）
+      let dispW=dispH*(sp.sw/sp.sh);
+      imageMode(CENTER);
+      drawingContext.globalAlpha=globalA;
+      image(imgs.bottles, 0, -dispH/2, dispW, dispH, sp.sx, sp.sy, sp.sw, sp.sh);
+      drawingContext.globalAlpha=1.0;
+      imageMode(CORNER);
+    } else {
+      // フォールバック：旧p5.js描画
+      drawingContext.globalAlpha=globalA;
+      let c=b.col;
+      noStroke(); fill(c[0],c[1],c[2],210);
+      rect(-b.w/2,-b.h, b.w, b.h*0.72, 2);
+      rect(-2.5, -b.h*0.96, 5, b.h*0.32, 1);
+      fill(c[0]+18,c[1]+18,c[2]+18,80);
+      rect(-b.w/2+1,-b.h*0.52,b.w-2,b.h*0.22,1);
+      fill(220,205,175,95);
+      rect(-b.w/2+0.5,-b.h*0.48,b.w-1,b.h*0.26,1);
+      drawingContext.globalAlpha=1.0;
+    }
     pop();
-    if(!b.on) drawingContext.globalAlpha=1.0;
   });
 }
 
@@ -1733,6 +1781,11 @@ function drawCustImage(cx, sy, c, isTarget, alpha=255){
   let cw = CHAR_H * aspect;
   imageMode(CENTER);
   drawingContext.globalAlpha = alpha/255;
+  // 通常モード：グラスが左→キャラは左向き（画像を水平反転）
+  // mirrorMode：グラスが右→キャラは右向き（そのまま）
+  if(!mirrorMode){
+    scale(-1, 1);  // 左向きに反転
+  }
   image(img, 0, -CHAR_H/2, cw, CHAR_H);
   drawingContext.globalAlpha = 1.0;
   imageMode(CORNER);
