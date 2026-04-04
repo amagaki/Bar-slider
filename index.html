@@ -87,7 +87,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v1.91
+// BAR SLIDER v2.00a1
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=32.5, ZONE_W=52;
@@ -109,7 +109,8 @@ let endlessIsNewRecord=false;
 let g={}, obs=[], custs=[], targetIdx=0;
 let shelfBottles=[];   // 棚のボトル（壊せる）
 let dragging=false, dStartX=0, dStartY=0;
-let mirrorMode=false;  // 左右反転モード
+let mirrorMode=false;
+let imgs={};  // ロード済み画像  // 左右反転モード
 let travelDist=0, parts=[], shakeAmt=0;
 let resultMsg='';
 let floatingTexts=[];  // 浮遊スコアテキスト [{x,y,vy,alpha,txt,col}]
@@ -500,6 +501,18 @@ function buildLoopPath(){
 // ================================================================
 // P5 SETUP / DRAW
 // ================================================================
+function preload(){
+  const noop = ()=>{};  // エラー時は無視してフォールバック描画を使う
+  imgs.bgTitle  = loadImage('assets/bg_title.png',  noop, noop);
+  imgs.bgGame   = loadImage('assets/bg_game.png',   noop, noop);
+  imgs.c1Normal = loadImage('assets/char_ojisan_normal.png',  noop, noop);
+  imgs.c1Happy  = loadImage('assets/char_ojisan_happy.png',   noop, noop);
+  imgs.c2Normal = loadImage('assets/char_neesan_normal.png',  noop, noop);
+  imgs.c2Happy  = loadImage('assets/char_neesan_happy.png',   noop, noop);
+  imgs.c3Normal = loadImage('assets/char_ojichan_normal.png', noop, noop);
+  imgs.c3Happy  = loadImage('assets/char_ojichan_happy.png',  noop, noop);
+}
+
 function setup(){
   pixelDensity(1);
   createCanvas(GAME_W, GAME_H);
@@ -733,7 +746,13 @@ function draw(){
   if(SCREEN==='TITLE'){ drawBgAtmosphere(); drawTitleScreen(); updateTitleGlass(); drawParticles(); particleStep(); }
   else if(SCREEN==='STAGE_SELECT'){ drawBgAtmosphere(); drawStageSelect(); updateVolumeSlider(); particleStep(); }
   else {
-    drawBgAtmosphere(); drawBottleShelf(); drawCounter();
+    // ゲームステージ背景
+    if(imgs.bgGame){
+      image(imgs.bgGame, 0, 0, GAME_W, GAME_H);
+    } else {
+      drawBgAtmosphere();
+    }
+    drawBottleShelf(); drawCounter();
     drawBarDetails(); drawTargetZone(); drawCustomers();
     drawObstacles(); drawGlass(); drawHadoukenTrail(); drawParticles(); drawFloatingTexts(); drawBlastWords();
     drawGameHUD(); drawOverlay();
@@ -764,7 +783,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:LL().meta.hint, x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v1.91', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v2.00a1', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
@@ -914,11 +933,18 @@ function checkShelfBottleHits(){
 }
 
 function drawBgAtmosphere(){
-  [{x:GAME_W*0.22,c:[255,80,20]},{x:GAME_W*0.50,c:[20,140,255]},{x:GAME_W*0.78,c:[160,255,80]}].forEach(gw=>{
-    let gc=drawingContext.createRadialGradient(gw.x,40,5,gw.x,40,240);
-    gc.addColorStop(0,`rgba(${gw.c[0]},${gw.c[1]},${gw.c[2]},0.15)`); gc.addColorStop(1,'rgba(0,0,0,0)');
-    drawingContext.fillStyle=gc; drawingContext.fillRect(0,0,GAME_W,GAME_H*0.6);
-  });
+  // タイトル・ステージセレクト用背景画像
+  if(imgs.bgTitle){
+    image(imgs.bgTitle, 0, 0, GAME_W, GAME_H);
+  } else {
+    // 画像ロード前フォールバック
+    background(18, 10, 32);
+    [{x:GAME_W*0.22,c:[255,80,20]},{x:GAME_W*0.50,c:[20,140,255]},{x:GAME_W*0.78,c:[160,255,80]}].forEach(gw=>{
+      let gc=drawingContext.createRadialGradient(gw.x,40,5,gw.x,40,240);
+      gc.addColorStop(0,`rgba(${gw.c[0]},${gw.c[1]},${gw.c[2]},0.15)`); gc.addColorStop(1,'rgba(0,0,0,0)');
+      drawingContext.fillStyle=gc; drawingContext.fillRect(0,0,GAME_W,GAME_H*0.6);
+    });
+  }
   noStroke();
   bgStars.forEach(s=>{ s.phase+=0.016; fill(255,255,240,75+sin(s.phase)*55); circle(s.x,s.y,s.r*2); });
 }
@@ -1536,7 +1562,9 @@ function initRound(){
   let cxsBase=[W*0.78,W*0.87,W*0.95];
   let cxs = mirrorMode ? cxsBase.map(x=>GAME_W-x).reverse() : cxsBase;
   let names=LL().customers;
-  custs=cxs.map((cx,i)=>({x:cx,name:names[i],y:stageSY(cx),face:'😐'}));
+  const CUST_IMG_KEYS=[['c1Normal','c1Happy'],['c2Normal','c2Happy'],['c3Normal','c3Happy']];
+  custs=cxs.map((cx,i)=>({x:cx,name:names[i],y:stageSY(cx),face:'😐',
+    imgNormal:CUST_IMG_KEYS[i][0], imgHappy:CUST_IMG_KEYS[i][1], happy:false}));
   targetIdx=floor(random(custs.length));
   dragging=false; parts=[]; resultMsg=''; floatingTexts=[]; vxHistory=[]; lastDeliverySuccess=false; lastThrowBonus=0; lastStars=0;
   chargeHoldFrames=0; is500shot=false; blast500Mode=false; blastCustomers=[]; blastWords=[]; hadoukenTrail=[]; blastHoles=[];
@@ -1685,12 +1713,32 @@ function drawTargetZone(){
   stroke(255,215,0,110+pls*80); strokeWeight(1.5); noFill();
   let y=stageSY(tc.x)-4;
   for(let i=0;i<14;i++){ if(i%2===0){ let x1=tc.x-ZONE_W+(i/14)*ZONE_W*2,x2=tc.x-ZONE_W+((i+0.75)/14)*ZONE_W*2; line(x1,y,x2,y); } }
-  fill(255,215,0,155+pls*65); noStroke(); textSize(17); text('▼',tc.x,stageSY(tc.x)-26-pls*6);
+  fill(255,215,0,155+pls*65); noStroke(); textSize(17); text('▼',tc.x,stageSY(tc.x)-(typeof CHAR_H!=='undefined'?CHAR_H:26)-6-pls*6);
+}
+
+// キャラクター描画サイズ定数
+const CHAR_W=110, CHAR_H=110;
+
+function drawCustImage(cx, sy, c, isTarget, alpha=255){
+  let key = (c.happy ? c.imgHappy : c.imgNormal) || c.imgNormal;
+  let img = imgs[key];
+  if(!img){
+    // 画像なしフォールバック（旧描画）
+    fill(isTarget?color(105,72,188):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
+    fill(210,170,130); noStroke(); ellipse(0,-56,24,26);
+    textSize(14); noStroke(); text(c.face,0,-56);
+    return;
+  }
+  // 画像の下端をカウンター面に合わせる
+  imageMode(CENTER);
+  drawingContext.globalAlpha = alpha/255;
+  image(img, 0, -CHAR_H/2, CHAR_W, CHAR_H);
+  drawingContext.globalAlpha = 1.0;
+  imageMode(CORNER);
 }
 
 function drawCustomers(){
   if(blast500Mode){
-    // 500%モード：吹っ飛びカスタマーを描画
     blastCustomers.forEach(bc=>{
       if(bc.blown){
         bc.x+=bc.vx; bc.y+=bc.vy;
@@ -1699,31 +1747,26 @@ function drawCustomers(){
       let a=bc.blown ? constrain(map(bc.y,GAME_H*0.5,GAME_H+60,255,0),0,255) : 255;
       if(a<=0) return;
       push(); translate(bc.x, bc.y); rotate(bc.angle);
-      drawingContext.globalAlpha=a/255;
-      let isTarget=bc.data.name===custs[targetIdx]?.name;
-      fill(isTarget?color(75,52,128):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
-      fill(210,170,130); ellipse(0,-56,24,26);
-      textSize(14); noStroke(); text(bc.data.face,0,-56);
-      fill(165,165,165); textSize(9); text(bc.data.name,0,-76);
-      drawingContext.globalAlpha=1.0;
+      drawCustImage(bc.x, bc.y, bc.data, bc.data.name===custs[targetIdx]?.name, a);
+      fill(165,165,165,a); textSize(9); text(bc.data.name,0,-CHAR_H-8);
       pop();
     });
     return;
   }
   custs.forEach((c,i)=>{
     let isTarget=i===targetIdx, sy=stageSY(c.x);
-    push(); translate(c.x,sy-8);
-    fill(isTarget?color(105,72,188):color(32,28,48)); noStroke(); rect(-11,-47,22,40,4);
-    fill(210,170,130); noStroke(); ellipse(0,-56,24,26);
-    textSize(14); noStroke(); text(c.face,0,-56);
-    fill(isTarget?color(255,230,120):color(185,185,185)); textSize(isTarget?12:10);
+    push(); translate(c.x, sy);
+    drawCustImage(c.x, sy, c, isTarget);
+    // 名前表示
+    fill(isTarget?color(255,230,120):color(220,220,220)); textSize(isTarget?12:10);
     if(isTarget) textStyle(BOLD);
-    text(c.name,0,-76);
+    noStroke(); text(c.name, 0, -CHAR_H-6);
     textStyle(NORMAL);
+    // オーダーバッジ
     if(isTarget&&S==='AIM'){
       let pls=sin(frameCount*0.1)*0.5+0.5;
-      fill(255,215,0,50+pls*30); noStroke(); ellipse(0,-96,90,24);
-      fill(255,215,0,220); textSize(14); textStyle(BOLD); text(LL().ui.order_badge,0,-96); textStyle(NORMAL);
+      fill(255,215,0,50+pls*30); noStroke(); ellipse(0,-CHAR_H-26,90,24);
+      fill(255,215,0,220); textSize(14); textStyle(BOLD); text(LL().ui.order_badge,0,-CHAR_H-26); textStyle(NORMAL);
     }
     pop();
   });
@@ -2307,7 +2350,7 @@ function deliverTo(idx){
   g.done=true; g.vx=0; g.vy=0; g.angle=0; g.airborne=false; pathSpeed=0;
   if(idx===targetIdx){
     score+=1000; roundsCleared++;
-    custs[idx].face='😄'; spawnParts(g.x,g.y,color(255,215,0),28); shakeAmt=3;
+    custs[idx].face='😄'; custs[idx].happy=true; spawnParts(g.x,g.y,color(255,215,0),28); shakeAmt=3;
     playDeliver();
     spawnFloatingText(g.x, g.y-30, '+1000', [255,215,0]);
     if(gameMode==='endless'){
