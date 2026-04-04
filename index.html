@@ -1133,8 +1133,8 @@ function updateTitleGlass(){
 // ================================================================
 function initStageWords(){
   stageWords=[];
-  let cols=3, cardW=min(GAME_W*0.28,240), cardH=floor(cardW*0.80);
-  let gapX=(GAME_W-cardW*cols)/(cols+1), startY=GAME_H*0.215;
+  const cols=3, cardW=SS_CARD_W, cardH=SS_CARD_H, ROW_GAP=SS_ROW_GAP;
+  const gapX=SS_GAP_X, startY=SS_START_Y;
 
   // ─── タイトル ───
   stageWords.push({ txt:LL().ui.stage_select_title, x:GAME_W/2, y:GAME_H*0.08,
@@ -1428,13 +1428,11 @@ let resetConfirm=false;   // スコアリセット確認フラグ
 let resetConfirmTimer=0; // 確認タイマー（フレーム数）
 
 function drawStageSelect(){
-  // cardH = 板エリアの高さ, ロープは上方に kanban画像内のロープ比率でオーバーフロー
-  const CARD_W=280, CARD_H=150, ROW_GAP=24;
-  const ROPE_H=floor(CARD_H*(159/215));  // 111px: 板とロープの比率に基づく
-  const K_DRAW_H=CARD_H+ROPE_H;           // 261px: kanban全体の描画高さ
-  const K_DRAW_W=floor(K_DRAW_H*(500/420)); // 310px: アスペクト比維持
-  const gapX=(GAME_W-CARD_W*3)/4;         // 25px
-  const startY=floor(ROPE_H)+12;          // 123px: row0ロープが y=12から始まる
+  const CARD_W=SS_CARD_W, CARD_H=SS_CARD_H, ROW_GAP=SS_ROW_GAP;
+  const ROPE_H=floor(CARD_H*(159/215));
+  const K_DRAW_H=CARD_H+ROPE_H;
+  const K_DRAW_W=floor(K_DRAW_H*(500/420));
+  const gapX=SS_GAP_X, startY=SS_START_Y;
   let cols=3, cardW=CARD_W, cardH=CARD_H;
   hoverStage=-1;
   let gapXc=gapX;
@@ -1589,6 +1587,10 @@ function volSliderRelease(){
 // 看板画像のsrc座標定数
 const KANBAN_SW=500, KANBAN_SH=420;
 // 新kanban.png 500x420: ロープy=0-159(38%), 板y=160-375(57%)
+// ステージセレクト レイアウト定数（initStageWords/drawStageSelect/mousePressedで共有）
+const SS_CARD_W=280, SS_CARD_H=150, SS_ROW_GAP=24;
+const SS_GAP_X=Math.floor((960-SS_CARD_W*3)/4);
+const SS_START_Y=Math.floor(SS_CARD_H*(159/215))+12;
 
 function drawStageCardFrameOnly(x,y,w,h,st,hov){
   push();
@@ -2748,7 +2750,7 @@ function mousePressed(){
     if(mouseX>tab1x&&mouseX<tab1x+tabW&&mouseY>tabY&&mouseY<tabY+tabH){ gameMode='single'; playButton(); return; }
     if(mouseX>tab2x&&mouseX<tab2x+tabW&&mouseY>tabY&&mouseY<tabY+tabH){ gameMode='endless'; playButton(); return; }
     // ステージカード
-    const cols=3,cardW=280,cardH=150,ROW_GAP=24,gapX=(GAME_W-cardW*cols)/4,startY=floor(150*(159/215))+12;
+    const cols=3,cardW=SS_CARD_W,cardH=SS_CARD_H,ROW_GAP=SS_ROW_GAP,gapX=SS_GAP_X,startY=SS_START_Y;
     STAGES.forEach((st,i)=>{
       let col=i%cols,row=floor(i/cols),cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+ROW_GAP);
       if(mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH){ playButton(); startGame(i); }
