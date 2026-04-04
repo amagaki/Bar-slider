@@ -87,7 +87,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v2.00a6
+// BAR SLIDER v2.00a7
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=32.5, ZONE_W=52;
@@ -800,7 +800,7 @@ function initTitleWords(){
       kind:'button_label', sz:18, col:[255,180,0], hitR:90 },
     { txt:LL().meta.hint, x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v2.00a6', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v2.00a7', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
@@ -1149,22 +1149,22 @@ function initStageWords(){
 
     // CLEARバッジ
     if(st.cleared){
-      stageWords.push({ txt:'✓ CLEAR', x:cx+22, y:cy+12,
+      stageWords.push({ txt:'✓ CLEAR', x:cx+28, y:cy+8,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_clear', sz:11, col:[150,255,150], hitR:50, anchor:'left' });
     }
     // 単 ラベル（左上）
-    stageWords.push({ txt:LL().ui.single_abbr, x:cx+22, y:cy+24,
+    stageWords.push({ txt:LL().ui.single_abbr, x:cx+28, y:cy+22,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_label', sz:12,
       col:[180,215,255], hitR:36, anchor:'left' });
     if(st.cleared&&st.bestRecord){
-      stageWords.push({ txt:LL().hud.throws_stat(st.bestRecord.throws), x:cx+22, y:cy+38,
+      stageWords.push({ txt:LL().hud.throws_stat(st.bestRecord.throws), x:cx+28, y:cy+36,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stat', sz:12, col:[160,200,160], hitR:36, anchor:'left' });
-      stageWords.push({ txt:st.bestRecord.score+'pt', x:cx+22, y:cy+52,
+      stageWords.push({ txt:st.bestRecord.score+'pt', x:cx+28, y:cy+50,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_score', sz:14, col:[255,215,0], hitR:42, anchor:'left' });
       // 単一モード星（scoreの下）
       if(st.bestRecord.stars){
         let ss='★'.repeat(st.bestRecord.stars)+'☆'.repeat(3-st.bestRecord.stars);
-        stageWords.push({ txt:ss, x:cx+22, y:cy+66,
+        stageWords.push({ txt:ss, x:cx+28, y:cy+64,
           vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stars', sz:13, col:[255,215,0], hitR:40, anchor:'left' });
       }
     } else {
@@ -1172,18 +1172,18 @@ function initStageWords(){
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_dash', sz:11, col:[160,200,160], hitR:36, anchor:'left' });
     }
     // 連 ラベル（右上）
-    stageWords.push({ txt:LL().ui.endless_abbr, x:cx+cardW-22, y:cy+24,
+    stageWords.push({ txt:LL().ui.endless_abbr, x:cx+cardW-28, y:cy+22,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_label', sz:12, col:[100,200,255], hitR:36, anchor:'right' });
     if(st.bestEndlessRecord){
       let br=st.bestEndlessRecord;
-      stageWords.push({ txt:LL().hud.streak_stat(br.streak), x:cx+cardW-22, y:cy+38,
+      stageWords.push({ txt:LL().hud.streak_stat(br.streak), x:cx+cardW-28, y:cy+36,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stat', sz:12, col:[160,200,160], hitR:36, anchor:'right' });
-      stageWords.push({ txt:br.score+'pt', x:cx+cardW-22, y:cy+52,
+      stageWords.push({ txt:br.score+'pt', x:cx+cardW-28, y:cy+50,
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_score', sz:14, col:[255,215,0], hitR:42, anchor:'right' });
       // 連続モード星（scoreの下）
       if(br.stars && br.stars>0){
         let ss='★'.repeat(br.stars)+'☆'.repeat(3-br.stars);
-        stageWords.push({ txt:ss, x:cx+cardW-22, y:cy+66,
+        stageWords.push({ txt:ss, x:cx+cardW-28, y:cy+64,
           vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_stars', sz:13, col:[255,215,0], hitR:40, anchor:'right' });
       }
     } else {
@@ -1191,13 +1191,13 @@ function initStageWords(){
         vx:0,vy:0,va:0,angle:0,alive:true, kind:'card_dash', sz:11, col:[100,200,255], hitR:36, anchor:'right' });
     }
     // 絵文字（中央上部・大きく）
-    stageWords.push({ txt:st.emoji, x:mx, y:cy+58,
+    stageWords.push({ txt:st.emoji, x:mx, y:cy+62,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_emoji', sz:24, col:[255,255,255], hitR:cardW*0.30 });
     // ステージ名（中央）
-    stageWords.push({ txt:ls.name, x:mx, y:cy+92,
+    stageWords.push({ txt:ls.name, x:mx, y:cy+98,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_name', sz:18, col:[255,240,200], hitR:cardW*0.40 });
     // 説明（中央下部）
-    stageWords.push({ txt:ls.sub, x:mx, y:cy+120,
+    stageWords.push({ txt:ls.sub, x:mx, y:cy+128,
       vx:0,vy:0,va:0,angle:0,alive:true, kind:'stage_sub', sz:10, col:[220,200,160], hitR:cardW*0.36 });
   });
 
@@ -1428,59 +1428,47 @@ let resetConfirm=false;   // スコアリセット確認フラグ
 let resetConfirmTimer=0; // 確認タイマー（フレーム数）
 
 function drawStageSelect(){
-  const CARD_W=SS_CARD_W, CARD_H=SS_CARD_H, ROW_GAP=SS_ROW_GAP;
-  const ROPE_H=floor(CARD_H*(159/215));
-  const K_DRAW_H=CARD_H+ROPE_H;
-  const K_DRAW_W=floor(K_DRAW_H*(500/420));
-  const gapX=SS_GAP_X, startY=SS_START_Y;
-  let cols=3, cardW=CARD_W, cardH=CARD_H;
+  const cols=3,cardW=SS_CARD_W,cardH=SS_CARD_H,ROW_GAP=SS_ROW_GAP;
+  const gapX=SS_GAP_X,startY=SS_START_Y;
   hoverStage=-1;
-  let gapXc=gapX;
 
-  // クリック判定用変数の計算（mousePressed内と共有）
-  // hoverStageの更新
+  // ホバー判定
   STAGES.forEach((st,i)=>{
-    let col=i%cols, row=floor(i/cols);
-    let cx=gapXc+col*(cardW+gapXc), cy=startY+row*(cardH+ROW_GAP);
-    let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
-    if(hov) hoverStage=i;
+    let col=i%cols,row=floor(i/cols);
+    let cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+ROW_GAP);
+    if(mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH) hoverStage=i;
   });
 
-  // 【1】下段看板（row=1）のロープ部分を最背面に描画
-  // kanban画像のロープが上段看板の後ろを通るよう、先に下段を描く
+  // 【1】下段（row=1）ロープ部分のみ → 上段看板の奥に描く
   STAGES.forEach((st,i)=>{
-    let col=i%cols, row=floor(i/cols);
+    let col=i%cols,row=floor(i/cols);
     if(row!==1) return;
-    let cx=gapXc+col*(cardW+gapXc), cy=startY+row*(cardH+ROW_GAP);
-    let kx=cx-floor((K_DRAW_W-cardW)/2), ky=cy-ROPE_H;
-    if(imgOK('kanban')){
-      push(); imageMode(CORNER);
-      // ロープ部分のみ描画（板は後で描く）
-      let ropeSrcH=floor(KANBAN_SH*(ROPE_H/K_DRAW_H));
-      image(imgs.kanban, kx, ky, K_DRAW_W, ROPE_H, 0, 0, KANBAN_SW, ropeSrcH);
-      pop();
-    }
+    let cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+ROW_GAP);
+    if(!imgOK('kanban')) return;
+    let L=kanbanLayout(cx,cy,cardW,cardH);
+    let ropeDstH=L.boardDstY-L.kY;
+    push(); imageMode(CORNER);
+    image(imgs.kanban,L.kX,L.kY,L.kW,ropeDstH,0,0,KANBAN_SW,160);
+    pop();
   });
 
-  // 【2】上段看板（row=0）を全体描画
+  // 【2】上段（row=0）全体（ロープ+板）
   STAGES.forEach((st,i)=>{
-    let col=i%cols, row=floor(i/cols);
+    let col=i%cols,row=floor(i/cols);
     if(row!==0) return;
-    let cx=gapXc+col*(cardW+gapXc), cy=startY+row*(cardH+ROW_GAP);
-    let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
-    drawStageCardFrameOnly(cx,cy,cardW,cardH,st,hov);
+    let cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+ROW_GAP);
+    drawStageCardFrameOnly(cx,cy,cardW,cardH,st,i===hoverStage,false);
   });
 
-  // 【3】下段看板（row=1）の板部分を描画（ロープは【1】で描画済み）
+  // 【3】下段（row=1）板部分のみ（ロープは【1】で描画済み）
   STAGES.forEach((st,i)=>{
-    let col=i%cols, row=floor(i/cols);
+    let col=i%cols,row=floor(i/cols);
     if(row!==1) return;
-    let cx=gapXc+col*(cardW+gapXc), cy=startY+row*(cardH+ROW_GAP);
-    let hov=mouseX>cx&&mouseX<cx+cardW&&mouseY>cy&&mouseY<cy+cardH;
-    drawStageCardFrameOnly(cx,cy,cardW,cardH,st,hov);
+    let cx=gapX+col*(cardW+gapX),cy=startY+row*(cardH+ROW_GAP);
+    drawStageCardFrameOnly(cx,cy,cardW,cardH,st,i===hoverStage,true);
   });
 
-  // 文字オブジェクト（最前面：STAGE SELECTも含む）
+  // 【4】テキスト最前面
   drawStageWords();
   updateStageWords();
   updateStageGlass();
@@ -1586,29 +1574,41 @@ function volSliderRelease(){
 // カード枠のみ（テキストなし）
 // 看板画像のsrc座標定数
 const KANBAN_SW=500, KANBAN_SH=420;
-// 新kanban.png 500x420: ロープy=0-159(38%), 板y=160-375(57%)
-// ステージセレクト レイアウト定数（initStageWords/drawStageSelect/mousePressedで共有）
+const KANBAN_SCALE=1.35;  // 看板描画スケール（1.0=ロープ:板比率通り）
+// ステージセレクト レイアウト定数
 const SS_CARD_W=280, SS_CARD_H=150, SS_ROW_GAP=24;
 const SS_GAP_X=Math.floor((960-SS_CARD_W*3)/4);
-const SS_START_Y=Math.floor(SS_CARD_H*(159/215))+12;
+// SS_START_Y: ロープがy=0から始まるようropeH2と一致させる
+const SS_START_Y=Math.floor(SS_CARD_H*(159/215)*KANBAN_SCALE);
 
-function drawStageCardFrameOnly(x,y,w,h,st,hov){
+// 看板レイアウト計算（KANBAN_SCALE適用）
+function kanbanLayout(x,y,w,h){
+  let baseH=h+floor(h*(159/215));
+  let kH=floor(baseH*KANBAN_SCALE);
+  let kW=floor(kH*(500/420));
+  let ropeH2=floor(h*(159/215)*KANBAN_SCALE);
+  let kX=x-floor((kW-w)/2);
+  let kY=y-ropeH2;
+  let boardDstY=kY+floor(kH*160/420);
+  let boardDstH=kH-floor(kH*160/420);
+  return {kH,kW,kX,kY,boardDstY,boardDstH};
+}
+
+// boardOnly=true: 板部分のみ（ロープは別途描画済み）
+function drawStageCardFrameOnly(x,y,w,h,st,hov,boardOnly=false){
   push();
   if(imgOK('kanban')){
-    // ホバー時は明るく
     if(hov) tint(255,240,200,245); else noTint();
     imageMode(CORNER);
-    // ロープをカード上にはみ出させ板をカード内に収める
-    // ROPE_H と K_DRAW_W は drawStageSelect内定数と揃える
-    let ropeH2=floor(h*(159/215));
-    let kH=h+ropeH2, kW=floor(kH*(500/420));
-    let kX=x-floor((kW-w)/2), kY=y-ropeH2;
-    image(imgs.kanban, kX, kY, kW, kH, 0, 0, KANBAN_SW, KANBAN_SH);
+    let L=kanbanLayout(x,y,w,h);
+    if(boardOnly){
+      image(imgs.kanban,L.kX,L.boardDstY,L.kW,L.boardDstH,0,160,KANBAN_SW,KANBAN_SH-160);
+    } else {
+      image(imgs.kanban,L.kX,L.kY,L.kW,L.kH,0,0,KANBAN_SW,KANBAN_SH);
+    }
     noTint();
-    // ホバー時の薄いゴールドオーバーレイ
     if(hov){ fill(255,200,60,22); noStroke(); rect(x,y,w,h,4); }
   } else {
-    // フォールバック：旧rect描画
     let bc=st.cleared?[100,230,100]:hov?[255,200,60]:[80,80,120];
     if(hov){ fill(255,200,60,18); noStroke(); rect(x-3,y-3,w+6,h+6,14); }
     stroke(bc[0],bc[1],bc[2],hov?220:140); strokeWeight(hov?2:1.5);
