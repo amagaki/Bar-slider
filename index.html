@@ -897,6 +897,15 @@ const BOTTLE_SPRITES = [
   {sx:1096,sy:580, sw:64, sh:188},
   {sx:1266,sy:580, sw:73, sh:188},
 ];
+// カウンター障害物用グラススプライト
+const GLASS_SPRITES = {
+  tumbler: {sx:389, sy:580, sw:72,  sh:188},
+  shot:    {sx:512, sy:580, sw:73,  sh:188},
+  wine1:   {sx:679, sy:580, sw:67,  sh:188},
+  wine2:   {sx:854, sy:580, sw:51,  sh:188},
+  wine3:   {sx:1020,sy:580, sw:70,  sh:188},
+};
+
 const SHELF_BXS1=[0.17,0.24,0.30,0.37,0.44,0.51,0.58,0.65,0.72,0.79,0.85];
 const SHELF_BXS2=[0.20,0.28,0.36,0.46,0.56,0.66,0.74,0.82];
 const BOTTLE_COLS=[[18,65,28],[72,14,8],[15,42,72],[80,55,10],[35,18,75],[12,68,55],[90,22,18],[28,60,80],[45,30,90],[60,80,15],[80,30,55]];
@@ -904,10 +913,13 @@ const BOTTLE_COLS=[[18,65,28],[72,14,8],[15,42,72],[80,55,10],[35,18,75],[12,68,
 function initShelfBottles(){
   shelfBottles=[];
   let allBxs=[...SHELF_BXS1.map(bx=>({bx,sy:SY1})), ...SHELF_BXS2.map(bx=>({bx,sy:SY2}))];
+  // シャッフル配列生成（毎ラウンドランダムな順番）
+  let sprOrder=Array.from({length:BOTTLE_SPRITES.length},(_,i)=>i);
+  for(let i=sprOrder.length-1;i>0;i--){ let j=floor(random(i+1)); [sprOrder[i],sprOrder[j]]=[sprOrder[j],sprOrder[i]]; }
+
   allBxs.forEach(({bx,sy},i)=>{
     let h=44+sin(i*1.7)*14, w=8+sin(i*0.9)*2.5;
-    // スプライトをランダムに割り当て（偏りを防ぐためシャッフル）
-    let sprIdx=i%BOTTLE_SPRITES.length;
+    let sprIdx=sprOrder[i%sprOrder.length];
     shelfBottles.push({
       x:bx*GAME_W, baseY:sy, y:sy,
       vx:0, vy:0, va:0, angle:0,
@@ -1593,16 +1605,16 @@ function initRound(){
   if(loopMode){
     let cx=W*0.50, R=min(GAME_H*0.185,110);
     obs=[
-      {type:'ashtray', x:mirrorMode?cx+R+160:cx-R-160, y:0,vx:0,vy:0,va:0,angle:0,on:true},
-      {type:'nuts',    x:mirrorMode?cx+R+30 :cx-R-30,  y:0,vx:0,vy:0,va:0,angle:0,on:true},
-      {type:'bottle',  x:mirrorMode?cx-R-200:cx+R+200, y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'wine2',  x:mirrorMode?cx+R+160:cx-R-160, y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'shot',   x:mirrorMode?cx+R+30 :cx-R-30,  y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'wine3',  x:mirrorMode?cx-R-200:cx+R+200, y:0,vx:0,vy:0,va:0,angle:0,on:true},
     ];
     obs.forEach(o=>{ o.y=stageSY(o.x)-obstH(o.type); });
   } else {
     obs=[
-      {type:'ashtray',x:mirrorMode?W*0.64:W*0.36,y:0,vx:0,vy:0,va:0,angle:0,on:true},
-      {type:'bottle', x:mirrorMode?W*0.48:W*0.52,y:0,vx:0,vy:0,va:0,angle:0,on:true},
-      {type:'nuts',   x:mirrorMode?W*0.33:W*0.67,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'tumbler',x:mirrorMode?W*0.64:W*0.36,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'wine1',  x:mirrorMode?W*0.48:W*0.52,y:0,vx:0,vy:0,va:0,angle:0,on:true},
+      {type:'shot',   x:mirrorMode?W*0.33:W*0.67,y:0,vx:0,vy:0,va:0,angle:0,on:true},
     ];
     obs.forEach(o=>{ o.y=stageSY(o.x)-obstH(o.type); });
   }
@@ -1776,19 +1788,17 @@ function drawCustImage(cx, sy, c, isTarget, alpha=255){
     textSize(14); noStroke(); text(c.face,0,-56);
     return;
   }
-  // 画像の下端をカウンター面に合わせる（アスペクト比維持）
+  // 画像だけ別pushで反転（テキストに影響しない）
   let aspect = img.width / img.height;
   let cw = CHAR_H * aspect;
+  push();
   imageMode(CENTER);
   drawingContext.globalAlpha = alpha/255;
-  // 通常モード：グラスが左→キャラは左向き（画像を水平反転）
-  // mirrorMode：グラスが右→キャラは右向き（そのまま）
-  if(!mirrorMode){
-    scale(-1, 1);  // 左向きに反転
-  }
+  if(!mirrorMode) scale(-1, 1);  // 左向きに反転
   image(img, 0, -CHAR_H/2, cw, CHAR_H);
   drawingContext.globalAlpha = 1.0;
   imageMode(CORNER);
+  pop();
 }
 
 function drawCustomers(){
@@ -1810,17 +1820,20 @@ function drawCustomers(){
   custs.forEach((c,i)=>{
     let isTarget=i===targetIdx, sy=stageSY(c.x);
     push(); translate(c.x, sy);
+    let hasImg = !!(imgs[c.imgNormal]);
+    let nameY = hasImg ? -CHAR_H-6 : -76;
+    let badgeY = hasImg ? -CHAR_H-26 : -96;
     drawCustImage(c.x, sy, c, isTarget);
     // 名前表示
     fill(isTarget?color(255,230,120):color(220,220,220)); textSize(isTarget?12:10);
     if(isTarget) textStyle(BOLD);
-    noStroke(); text(c.name, 0, -CHAR_H-6);
+    noStroke(); text(c.name, 0, nameY);
     textStyle(NORMAL);
     // オーダーバッジ
     if(isTarget&&S==='AIM'){
       let pls=sin(frameCount*0.1)*0.5+0.5;
-      fill(255,215,0,50+pls*30); noStroke(); ellipse(0,-CHAR_H-26,90,24);
-      fill(255,215,0,220); textSize(14); textStyle(BOLD); text(LL().ui.order_badge,0,-CHAR_H-26); textStyle(NORMAL);
+      fill(255,215,0,50+pls*30); noStroke(); ellipse(0,badgeY,90,24);
+      fill(255,215,0,220); textSize(14); textStyle(BOLD); text(LL().ui.order_badge,0,badgeY); textStyle(NORMAL);
     }
     pop();
   });
@@ -1833,9 +1846,27 @@ function drawObstacles(){
     if(!o.on) drawingContext.globalAlpha=1.0;
   });
 }
+function drawGlassObsSprite(sp, groundY){
+  // グラス画像障害物：下端をカウンター面に合わせる
+  if(!imgs.bottles) return false;
+  let dispH = 36;  // カウンター上の表示高さ
+  let dispW = dispH * (sp.sw / sp.sh);
+  imageMode(CENTER);
+  image(imgs.bottles, 0, -dispH/2, dispW, dispH, sp.sx, sp.sy, sp.sw, sp.sh);
+  imageMode(CORNER);
+  return true;
+}
+
 function renderObs(o){
   push(); translate(o.x,o.y); rotate(o.angle);
-  if(o.type==='ashtray'){
+  // グラス系障害物（画像使用）
+  if(o.type==='tumbler'||o.type==='shot'||o.type==='wine1'||o.type==='wine2'||o.type==='wine3'){
+    if(!drawGlassObsSprite(GLASS_SPRITES[o.type], o.y)){
+      // フォールバック
+      fill(200,220,240,180); stroke(160,180,200); strokeWeight(1);
+      rect(-8,-28,16,28,2);
+    }
+  } else if(o.type==='ashtray'){
     fill(128,125,115); stroke(92,88,78); strokeWeight(1.5); ellipse(0,4,36,14);
     fill(68,65,58); noStroke(); ellipse(0,2,26,8);
     fill(210,178,138); stroke(145,115,85); strokeWeight(0.5); rect(-4,-8,8,5,1);
@@ -2695,7 +2726,7 @@ function mouseReleased(){
     blast500Mode=true;
     blastCustomers=custs.map(c=>{
       let sy=stageSY(c.x);
-      return { x:c.x, y:sy-8, vx:0, vy:0, va:0, angle:0, blown:false, data:Object.assign({},c) };
+      return { x:c.x, y:sy, vx:0, vy:0, va:0, angle:0, blown:false, data:Object.assign({},c) };
     });
     hadoukenTrail=[];
     // HUDテキストオブジェクト化
