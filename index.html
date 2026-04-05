@@ -90,7 +90,7 @@
 </div>
 <script>
 // ================================================================
-// BAR SLIDER v2.00
+// BAR SLIDER v2.11
 // ================================================================
 const FRICTION=0.992, AIR_FRICTION=0.998, GRAVITY=0.38, SLOPE_FACTOR=0.045;
 const GLASS_W=16, GLASS_H=26, MAX_DRAG=260, MIN_DRAG=16, MAX_SPEED=32.5, ZONE_W=52;
@@ -512,6 +512,228 @@ function buildLoopPath(){
 // ================================================================
 // P5 SETUP / DRAW
 // ================================================================
+
+// ================================================================
+// BGM SYSTEM - 陽気なバー風ジャズ（Web Audio API）
+// ================================================================
+let bgmCtx=null, bgmGain=null, bgmPlaying=false;
+let bgmVolume=0.35;
+let bgmScheduler=null, bgmBar=0;
+
+const BGM_CHORDS=[
+  [466,587,698,830],[392,494,587,740],[262,311,392,466],[349,440,523,622]
+];
+const BGM_BASS=[
+  [233,196,220,175],[196,165,175,196],[131,147,165,175],[175,196,220,233]
+];
+
+function bgmGetCtx(){
+  if(!bgmCtx) bgmCtx=new(window.AudioContext||window.webkitAudioContext)();
+  if(bgmCtx.state==='suspended') bgmCtx.resume();
+  return bgmCtx;
+}
+function bgmNote(freq,t,dur,type,vol,det=0){
+  let ac=bgmGetCtx(),osc=ac.createOscillator(),env=ac.createGain();
+  osc.type=type; osc.frequency.value=freq; if(det) osc.detune.value=det;
+  env.gain.setValueAtTime(0,t);
+  env.gain.linearRampToValueAtTime(vol,t+0.012);
+  env.gain.setValueAtTime(vol,t+dur*0.7);
+  env.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  osc.connect(env); env.connect(bgmGain);
+  osc.start(t); osc.stop(t+dur+0.05);
+}
+function bgmHihat(t,vel){
+  let ac=bgmGetCtx();
+  let buf=ac.createBuffer(1,Math.floor(ac.sampleRate*0.05),ac.sampleRate);
+  let d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  let src=ac.createBufferSource(); src.buffer=buf;
+  let hpf=ac.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=8000;
+  let env=ac.createGain();
+  env.gain.setValueAtTime(vel*0.15,t);
+  env.gain.exponentialRampToValueAtTime(0.001,t+0.04);
+  src.connect(hpf); hpf.connect(env); env.connect(bgmGain);
+  src.start(t); src.stop(t+0.06);
+}
+function bgmKick(t){
+  let ac=bgmGetCtx(),osc=ac.createOscillator(),env=ac.createGain();
+  osc.type='sine';
+  osc.frequency.setValueAtTime(110,t);
+  osc.frequency.exponentialRampToValueAtTime(40,t+0.1);
+  env.gain.setValueAtTime(0.45,t);
+  env.gain.exponentialRampToValueAtTime(0.001,t+0.18);
+  osc.connect(env); env.connect(bgmGain);
+  osc.start(t); osc.stop(t+0.22);
+}
+function bgmSnare(t){
+  let ac=bgmGetCtx();
+  let osc=ac.createOscillator(),env=ac.createGain();
+  osc.type='triangle'; osc.frequency.value=180;
+  env.gain.setValueAtTime(0.25,t);
+  env.gain.exponentialRampToValueAtTime(0.001,t+0.1);
+  osc.connect(env); env.connect(bgmGain);
+  osc.start(t); osc.stop(t+0.12);
+  let buf=ac.createBuffer(1,Math.floor(ac.sampleRate*0.08),ac.sampleRate);
+  let d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  let src=ac.createBufferSource(); src.buffer=buf;
+  let env2=ac.createGain();
+  env2.gain.setValueAtTime(0.2,t);
+  env2.gain.exponentialRampToValueAtTime(0.001,t+0.07);
+  src.connect(env2); env2.connect(bgmGain);
+  src.start(t); src.stop(t+0.1);
+}
+// ================================================================
+// コミカル・ポップ チップチューン BGM
+// テンポ148bpm, Fメジャー, 24小節ループ
+// 構成: Aメロ×2(0-3) + Bメロ×2(4-7) + サビ×2(8-11) + ブリッジ(12-15) + ×2(16-23)
+// ================================================================
+// [周波数Hz, 拍数] 1拍=1beat, 0.5=8分音符
+// F4=349, G4=392, A4=440, Bb4=466, C5=523, D5=587, Eb5=622, F5=698, G5=784, A5=880, C6=1047
+const BGM_PHRASES = [
+  // ── Aメロ（元気よく跳ねる）──
+  [  // フレーズ0（8音符×1小節）
+    [523,0.5],[659,0.5],[784,0.5],[523,0.5],[659,0.5],[784,0.5],[880,0.5],[784,0.5],
+  ],[  // フレーズ1
+    [784,0.5],[659,0.5],[523,0.5],[440,0.5],[523,1],[392,1],
+  ],[  // フレーズ2（少し高め）
+    [880,0.5],[784,0.5],[880,0.5],[1047,0.5],[880,0.5],[784,0.5],[659,0.5],[523,0.5],
+  ],[  // フレーズ3（着地）
+    [659,0.5],[523,0.5],[440,0.5],[392,0.5],[523,2],
+  ],
+  // ── Bメロ（跳ねたリズム感）──
+  [  // フレーズ4
+    [440,0.5],[523,0.25],[440,0.25],[523,0.5],[659,0.5],[784,0.5],[659,0.5],
+  ],[  // フレーズ5
+    [784,0.5],[880,0.5],[784,0.5],[659,0.5],[523,0.5],[440,0.5],[392,0.5],[330,0.5],
+  ],[  // フレーズ6
+    [349,0.5],[440,0.5],[523,0.5],[659,0.5],[784,0.5],[880,0.5],[784,0.5],[698,0.5],
+  ],[  // フレーズ7（溜め）
+    [659,1],[523,0.5],[440,0.5],[392,1],[0,1],
+  ],
+  // ── サビ（明るく盛り上がる）──
+  [  // フレーズ8
+    [1047,0.5],[880,0.5],[784,0.5],[880,0.5],[1047,0.5],[880,0.5],[784,0.5],[659,0.5],
+  ],[  // フレーズ9
+    [784,0.5],[659,0.5],[523,0.5],[659,0.5],[784,1],[523,1],
+  ],[  // フレーズ10
+    [880,0.5],[784,0.5],[659,0.5],[784,0.5],[880,0.5],[1047,0.5],[880,0.5],[784,0.5],
+  ],[  // フレーズ11（華やか締め）
+    [1047,0.5],[880,0.5],[784,0.5],[659,0.5],[784,0.5],[523,0.5],[0,1],
+  ],
+  // ── ブリッジ（少し落ち着かせる）──
+  [  // フレーズ12
+    [523,0.5],[587,0.5],[659,0.5],[698,0.5],[784,0.5],[698,0.5],[659,0.5],[587,0.5],
+  ],[  // フレーズ13
+    [523,1],[440,0.5],[392,0.5],[440,0.5],[523,0.5],[659,0.5],[784,0.5],
+  ],[  // フレーズ14
+    [784,0.5],[659,0.25],[523,0.25],[659,0.5],[523,0.5],[440,0.5],[392,0.5],[330,0.5],
+  ],[  // フレーズ15（盛り上げ予備）
+    [349,0.5],[440,0.5],[523,0.5],[659,0.5],[784,0.5],[880,0.5],[1047,0.5],[0,0.5],
+  ],
+];
+// ベースライン（各小節4拍分）Fメジャー進行
+const BGM_BASS_POP=[
+  [175,261,196,261],[196,261,220,261],[175,261,196,261],[131,220,175,220], // Aメロ
+  [175,261,196,261],[220,261,196,261],[175,261,131,220],[98,196,147,196],  // Bメロ
+  [175,261,220,294],[196,261,261,329],[175,261,220,294],[131,196,175,261], // サビ
+  [175,220,196,261],[131,175,165,220],[175,220,196,261],[98,175,131,196],  // ブリッジ
+];
+
+function bgmScheduleBar(barIdx,barStart,bpm){
+  let bd=60/bpm;
+  let phraseIdx=barIdx%BGM_PHRASES.length;
+  let phrase=BGM_PHRASES[phraseIdx];
+
+  // ── メロディ（矩形波）──
+  let t=barStart, barEnd=barStart+bd*4;
+  phrase.forEach(([freq,beats])=>{
+    let dur=beats*bd*0.85;
+    if(freq>0){
+      bgmNote(freq,t,dur,'square',0.10);
+      // 高調波で明るさプラス
+      bgmNote(freq*2,t,dur*0.4,'square',0.022);
+      bgmNote(freq*1.5,t,dur*0.3,'sine',0.018);
+    }
+    t+=beats*bd;
+  });
+
+  // ── ベース（三角波）──
+  let bassBar=BGM_BASS_POP[phraseIdx%BGM_BASS_POP.length];
+  bassBar.forEach((f,bi)=>{
+    let bt=barStart+bi*bd;
+    bgmNote(f,bt,bd*0.78,'triangle',0.20);
+  });
+
+  // ── ドラム ──
+  // キック: 1拍・3拍
+  [0,2].forEach(b=>{
+    let ac=bgmGetCtx(),osc=ac.createOscillator(),env=ac.createGain();
+    osc.type='sine';
+    osc.frequency.setValueAtTime(130,barStart+b*bd);
+    osc.frequency.exponentialRampToValueAtTime(42,barStart+b*bd+0.09);
+    env.gain.setValueAtTime(0.5,barStart+b*bd);
+    env.gain.exponentialRampToValueAtTime(0.001,barStart+b*bd+0.16);
+    osc.connect(env); env.connect(bgmGain);
+    osc.start(barStart+b*bd); osc.stop(barStart+b*bd+0.2);
+  });
+  // スネア: 2拍・4拍
+  [1,3].forEach(b=>{
+    let ac=bgmGetCtx();
+    let buf=ac.createBuffer(1,Math.floor(ac.sampleRate*0.1),ac.sampleRate);
+    let d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    let src=ac.createBufferSource(); src.buffer=buf;
+    let bpf=ac.createBiquadFilter(); bpf.type='bandpass'; bpf.frequency.value=3000; bpf.Q.value=0.8;
+    let env=ac.createGain();
+    env.gain.setValueAtTime(0.28,barStart+b*bd);
+    env.gain.exponentialRampToValueAtTime(0.001,barStart+b*bd+0.08);
+    src.connect(bpf); bpf.connect(env); env.connect(bgmGain);
+    src.start(barStart+b*bd); src.stop(barStart+b*bd+0.12);
+  });
+  // ハイハット（8分）
+  for(let h=0;h<8;h++){
+    let ac=bgmGetCtx();
+    let buf=ac.createBuffer(1,Math.floor(ac.sampleRate*0.03),ac.sampleRate);
+    let d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    let src=ac.createBufferSource(); src.buffer=buf;
+    let hpf=ac.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=9000;
+    let env=ac.createGain();
+    let vel=(h%2===0)?0.12:0.07;
+    env.gain.setValueAtTime(vel,barStart+h*bd*0.5);
+    env.gain.exponentialRampToValueAtTime(0.001,barStart+h*bd*0.5+0.025);
+    src.connect(hpf); hpf.connect(env); env.connect(bgmGain);
+    src.start(barStart+h*bd*0.5); src.stop(barStart+h*bd*0.5+0.04);
+  }
+}
+
+function bgmStart(){
+  if(bgmPlaying) return;
+  bgmPlaying=true;
+  let ac=bgmGetCtx();
+  bgmGain=ac.createGain(); bgmGain.gain.value=seVolume*0.4; bgmGain.connect(ac.destination);
+  const BPM=148; let barDur=60/BPM*4;
+  bgmBar=0; let nextBar=ac.currentTime+0.05;
+  function schedule(){
+    if(!bgmPlaying) return;
+    let ac2=bgmGetCtx();
+    while(nextBar < ac2.currentTime+barDur*2.5){
+      bgmScheduleBar(bgmBar,nextBar,BPM);
+      bgmBar++; nextBar+=barDur;
+    }
+    bgmScheduler=setTimeout(schedule,200);
+  }
+  schedule();
+}
+function bgmStop(){
+  bgmPlaying=false;
+  if(bgmScheduler){ clearTimeout(bgmScheduler); bgmScheduler=null; }
+  if(bgmGain){
+    try{
+      bgmGain.gain.setValueAtTime(bgmGain.gain.value,bgmGetCtx().currentTime);
+      bgmGain.gain.linearRampToValueAtTime(0,bgmGetCtx().currentTime+0.5);
+    }catch(e){}
+    setTimeout(()=>{try{bgmGain.disconnect();}catch(e){}; bgmGain=null;},600);
+  }
+}
+
 function preload(){
   function loadImg(key, path){
     imgLoaded[key]=false;
@@ -541,6 +763,7 @@ function setup(){
   initStageGlasses();
   initShelfBottles();
   loadRecords();
+  bgmStart();  // タイトル表示時からBGM開始
   // GA: ゲーム起動（タイトル画面ロード）
   if(typeof gtag==='function') gtag('event','game_launch',{game_version:'1.91'});
 }
@@ -581,7 +804,7 @@ const LANG = {
       back_stage:            '← ステージ選択',
       mode_single:           '📍 単一モード',
       mode_endless:          '🔄 連続モード',
-      se_volume:             '🔊 SE音量',
+      se_volume:             '🔊 音量',
       score_reset:           'スコアリセット',
       score_reset_confirm:   '本当に？押して確定',
       mirror_off: '👉 左利き',
@@ -757,6 +980,8 @@ function clearRecords(){
 }
 
 function draw(){
+  // BGMマスターゲインをリアルタイム更新（即時音量反映）
+  if(bgmGain) bgmGain.gain.value = seVolume * 0.4;  // BGMはSEより控えめ
   let ox=0,oy=0;
   if(shakeAmt>0.4){ ox=random(-shakeAmt,shakeAmt); oy=random(-shakeAmt,shakeAmt); shakeAmt*=0.80; translate(ox,oy); }
   background(5,1,16);
@@ -803,7 +1028,7 @@ function initTitleWords(){
       kind:'button_label', sz:22, col:[60,30,0], hitR:90 },
     { txt:LL().meta.hint, x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v2.00', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v2.11', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
@@ -1267,7 +1492,8 @@ function initStageWords(){
   stageWords.push({ txt:LL().ui.se_volume, x:VOL_X+VOL_W/2, y:VOL_Y-12,
     vx:0,vy:0,va:0,angle:0,alive:true, kind:'ui_text', sz:10, col:[160,160,160], hitR:56 });
   stageWords.push({ txt:floor(seVolume*100)+'%', x:VOL_X+VOL_W/2, y:VOL_Y+14,
-    vx:0,vy:0,va:0,angle:0,alive:true, kind:'ui_text', sz:9, col:[140,140,160], hitR:36 });
+    vx:0,vy:0,va:0,angle:0,alive:true, kind:'vol_pct', sz:9, col:[140,140,160], hitR:36 });
+
 
   // ─── 左右反転トグルテキスト（モードタブと同形式）───
   stageWords.push({ txt:mirrorMode?LL().ui.mirror_on:LL().ui.mirror_off, x:RST_X-98, y:RST_Y+RST_H/2,
@@ -1326,6 +1552,9 @@ function drawStageWords(){
 }
 
 function updateStageWords(){
+  // vol_pctのtxtをリアルタイム更新（alive=trueのときのみ）
+  let vpw=stageWords.find(w=>w.kind==='vol_pct');
+  if(vpw && vpw.alive) vpw.txt=floor(seVolume*100)+'%';
   stageWords.forEach(w=>{
     if(!w.alive){
       w.x+=w.vx; w.y+=w.vy;
@@ -1546,6 +1775,7 @@ function drawStageSelect(){
 
   // SE音量スライダー（バーのみ）
   drawVolumeSliderBarOnly();
+
   // スコアリセットボタン（枠のみ）
   drawResetButtonFrameOnly();
   // 左右反転トグルボタン枠（モードタブ風）
@@ -1608,6 +1838,7 @@ function resetPress(){
   return true;
 }
 // SE音量スライダー（右下・←タイトルと同じ高さ、リセットと同X）
+const BGMVOL_X=GAME_W-240, BGMVOL_Y=GAME_H*0.912, BGMVOL_W=80;
 const VOL_X=GAME_W-118, VOL_Y=GAME_H*0.912, VOL_W=100, VOL_H=6;
 let volDragging=false;
 
@@ -1734,6 +1965,7 @@ function startGame(idx){
 }
 
 function initRound(){
+  bgmStart();  // ゲーム開始時BGM再生
   // 酒の量：5段階からランダム選択
   let fillLevels=[
     {amt:0.10, color:[175,95,22]},
@@ -2836,7 +3068,7 @@ function mousePressed(){
       titleDragging=false;
       lastChargeTier=0;
       stageGlassUnlocked=false;  // 画面を離れたらリセット
-      SCREEN='TITLE';
+      SCREEN='TITLE';  // BGMは鳴りっぱなし
     }
     return;
   }
