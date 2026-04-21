@@ -543,7 +543,9 @@ function setup(){
   initShelfBottles();
   loadRecords();
   // GA: ゲーム起動（タイトル画面ロード）
-  if(typeof gtag==='function') gtag('event','game_launch',{game_version:'1.91'});
+  if(typeof gtag==='function') gtag('event','game_launch',{game_version:'v2.11'});
+  // 初回訪問時チュートリアル表示（関数定義後に実行されるのでsetup内でOK）
+  setTimeout(()=>{ if(!tutSeen('title')) tutShow('title'); }, 100);
 }
 
 // ================================================================
@@ -776,11 +778,13 @@ function draw(){
     drawBarDetails(); drawTargetZone(); drawCustomers();
     drawObstacles(); drawGlass(); drawHadoukenTrail(); drawParticles(); drawFloatingTexts(); drawBlastWords();
     drawGameHUD(); drawOverlay();
-    if(S==='SLIDE'){ physicsStep(); checkShelfBottleHits(); }
+    if(S==='SLIDE'){ physicsStep(); checkShelfBottleHits(); checkGameHelpBtnHit(); }
     obstacleStep(); particleStep(); updateShelfBottles(); updateFloatingTexts();
   }
   if(shakeAmt>0.4) translate(-ox,-oy);
   drawPrivacyModal();
+  if(!tutIsOpen() && SCREEN==='GAME') drawGameHelpButton();
+  drawTutorialModal();
   drawCursor();
 
 }
@@ -805,10 +809,12 @@ function initTitleWords(){
       kind:'button_label', sz:22, col:[60,30,0], hitR:90 },
     { txt:LL().meta.hint, x:GAME_W/2, y:GAME_H*0.62, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'hint', sz:13, col:[200,180,80], hitR:150 },
-    { txt:'v2.00', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
+    { txt:'v2.11', x:GAME_W/2, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     { txt:'Privacy Policy', x:GAME_W-70, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'privacy_link', sz:9, col:[80,80,100], hitR:55 },
+    { txt:'?', x:GAME_W-22, y:22, vx:0,vy:0,va:0, angle:0, alive:true,
+      kind:'help_btn', sz:13, col:[220,215,255], hitR:18 },
 
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
@@ -892,6 +898,15 @@ function drawAndUpdateTitleWords(pulse){
       drawingContext.fillText(w.txt,0,0);
       drawingContext.restore();
       textFont('sans-serif'); pop();
+    } else if(w.kind==='help_btn'){
+      let hov=w.alive&&dist(mouseX,mouseY,w.x,w.y)<18;
+      push();
+      drawingContext.globalAlpha=1.0;  // 前のwordの影響をリセット
+      fill(hov?color(140,120,220):color(100,90,180),w.alive?220:120);
+      stroke(180,160,255,w.alive?200:80); strokeWeight(1.5); circle(0,0,26);
+      fill(hov?color(255,255,255):color(235,230,255),w.alive?255:120);
+      noStroke(); textSize(14); textStyle(BOLD); text('?',0,1); textStyle(NORMAL);
+      pop();
     } else if(w.kind==='hint'){
       // ヒントテキスト：点滅なし・固定輝度
       fill(w.col[0],w.col[1],w.col[2], w.alive?190:120);
@@ -1010,6 +1025,15 @@ function updateShelfBottles(){
     b.vy+=0.5; b.vx*=0.97; b.angle+=b.va;
     b.alpha=max(0, b.alpha-6);  // 速めにフェード
   });
+}
+
+function checkGameHelpBtnHit(){
+  if(!gameHelpBtnAlive || !g.airborne) return;
+  if(dist(g.x,g.y,GAME_W-22,22)<22){
+    gameHelpBtnAlive=false;
+    spawnParts(GAME_W-22,22,color(140,120,220),6);
+    g.vx*=0.9; g.vy*=0.85;
+  }
 }
 
 function checkShelfBottleHits(){
@@ -1195,6 +1219,8 @@ function initStageWords(){
   // ─── タイトル ───
   stageWords.push({ txt:LL().ui.stage_select_title, x:GAME_W/2, y:GAME_H*0.08,
     vx:0,vy:0,va:0,angle:0,alive:true, kind:'neon_stage', sz:36, col:[255,160,20], hitR:130 });
+  stageWords.push({ txt:'?', x:GAME_W-22, y:22,
+    vx:0,vy:0,va:0,angle:0,alive:true, kind:'help_btn', sz:13, col:[220,215,255], hitR:14 });
 
   // ─── 各カード ───
   STAGES.forEach((st,i)=>{
@@ -1310,7 +1336,15 @@ function drawStageWords(){
       }[w.kind] || 200;
       let a = w.alive ? baseAlpha : baseAlpha*alpha_fade*0.7;
       fill(w.col[0],w.col[1],w.col[2], a); noStroke();
-      if(w.kind==='stage_name'){
+      if(w.kind==='help_btn'){
+        let hov=w.alive&&dist(mouseX,mouseY,w.x,w.y)<18;
+        push();
+        fill(hov?color(140,120,220):color(100,90,180),w.alive?220:120);
+        stroke(180,160,255,w.alive?200:80); strokeWeight(1.5); circle(0,0,26);
+        fill(hov?color(255,255,255):color(235,230,255),w.alive?255:120);
+        noStroke(); textSize(14); textStyle(BOLD); text('?',0,1); textStyle(NORMAL);
+        pop();
+      } else if(w.kind==='stage_name'){
         // グラデーション+アウトライン
         let a2=w.alive?1.0:alpha_fade;
         push();
@@ -1735,7 +1769,7 @@ function startGame(idx){
   if(typeof gtag==='function') gtag('event','stage_start',{
     stage_id: idx, stage_name: LL().stages[idx].name, mode: gameMode
   });
-  SCREEN='GAME'; initRound();
+  SCREEN='GAME'; gameHelpBtnAlive=true; initRound(); if(!tutSeen('game')) tutShow('game');
 }
 
 function initRound(){
@@ -2785,18 +2819,34 @@ function _pressAt(px,py){
 // INPUT
 // ================================================================
 function mousePressed(){
+  // チュートリアルモーダル: 閉じるボタンのみ
+  if(tutIsOpen()){
+    let mw=580,mh=320,mx=(GAME_W-mw)/2,my=(GAME_H-mh)/2;
+    let bw=130,bh=34,bx=mx+mw/2-65,by=my+mh-50;
+    if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ tutClose(); return; }
+    return;  // モーダル外クリックは無視
+  }
+
+  // ゲーム画面ヘルプボタン（?）クリック
+  if(SCREEN==='GAME' && gameHelpBtnAlive && dist(mouseX,mouseY,GAME_W-22,22)<18){
+    tutShow('game'); return;
+  }
+
   // モーダル表示中：どこでもクリックで閉じる
   if(showPrivacy){ showPrivacy=false; return; }
 
   if(SCREEN==='TITLE'){
-    // Privacy Policy クリック判定（alive時のみモーダル表示）
+    // Privacy Policy クリック判定（alive時のみ）
     let ppw=titleWords.find(w=>w.kind==='privacy_link'&&w.alive);
     if(ppw && dist(mouseX,mouseY,ppw.x,ppw.y)<ppw.hitR){ showPrivacy=true; return; }
+    // ヘルプボタン（alive時のみ）
+    let hw=titleWords.find(w=>w.kind==='help_btn'&&w.alive);
+    if(hw && dist(mouseX,mouseY,hw.x,hw.y)<18){ tutShow('title'); return; }
     // 言語ボタン判定（左上・縦並び）
     if(mouseX>10&&mouseX<110&&mouseY>14&&mouseY<52){ setLang('en'); playButton(); return; }
     if(mouseX>10&&mouseX<110&&mouseY>58&&mouseY<96){ setLang('ja'); playButton(); return; }
     let bw=240,bh=52,bx=GAME_W/2-120,by=GAME_H*0.68;
-    if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); titleDragging=false; stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; return; }
+    if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); titleDragging=false; stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; if(!tutSeen('stage_select')) tutShow('stage_select'); return; }
     // タイトルグラスのドラッグ開始
     if(!titleGlass.active && !titleGlass.gone){
       let dx=mouseX-titleGlass.x, dy=mouseY-titleGlass.y;
@@ -2805,6 +2855,9 @@ function mousePressed(){
     return;
   }
   if(SCREEN==='STAGE_SELECT'){
+    // ヘルプボタン（alive時のみ）
+    let shw=stageWords.find(w=>w.kind==='help_btn'&&w.alive);
+    if(shw && dist(mouseX,mouseY,shw.x,shw.y)<18){ tutShow('stage_select'); return; }
     if(volSliderPress()) return;
     if(resetPress()) return;
     // 隠しグラスのドラッグ開始
@@ -2854,7 +2907,7 @@ function mousePressed(){
   // GAME
   // 戻るボタン
   let bw=130,bh=30,bx=14,by=GAME_H-46;
-  if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; return; }
+  if(mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh){ playButton(); stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; if(!tutSeen('stage_select')) tutShow('stage_select'); return; }
 
   if(S==='RESULT'){
     if(gameMode==='endless'){
@@ -2865,7 +2918,7 @@ function mousePressed(){
     }
     return;
   }
-  if(S==='STAGE_CLEAR'||S==='ENDLESS_END'){ playButton(); stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; return; }
+  if(S==='STAGE_CLEAR'||S==='ENDLESS_END'){ playButton(); stageGlassUnlocked=false; initStageGlasses(); initStageWords(); SCREEN='STAGE_SELECT'; if(!tutSeen('stage_select')) tutShow('stage_select'); return; }
   if(S!=='AIM') return;
 
   let dx=mouseX-g.x, dy=mouseY-(g.y+GLASS_H/2);
@@ -2961,6 +3014,127 @@ function mouseReleased(){
 }
 
 function windowResized(){ if(loopMode&&SCREEN==='GAME') buildLoopPath(); }
+
+
+// ================================================================
+// TUTORIAL SYSTEM
+// ================================================================
+const TUT_KEYS = {
+  title:        'barslider_tut_title',
+  stage_select: 'barslider_tut_stage_select',
+  game:         'barslider_tut_game',
+};
+let tutorialState = { screen: null };
+
+function tutSeen(key){ try{ return !!localStorage.getItem(TUT_KEYS[key]); }catch(e){ return true; } }
+function tutMarkSeen(key){ try{ localStorage.setItem(TUT_KEYS[key],'1'); }catch(e){} }
+function tutShow(key){ tutorialState.screen=key; }
+function tutClose(){ if(tutorialState.screen) tutMarkSeen(tutorialState.screen); tutorialState.screen=null; }
+function tutIsOpen(){ return !!tutorialState.screen; }
+
+// ── 1ページコンテンツ定義 ──
+const TUT_CONTENT = {
+  title: {
+    title: '🍺 タイトル画面の遊び方',
+    lines: [
+      '画面中央のグラスを引っ張って離すと飛びます！',
+      '「BAR SLIDER」などの文字もグラスで吹っ飛ばせます。',
+      '',
+      '📌 PLAY START を押すとステージ選択へ。',
+      '📌 左上のボタンで言語を切り替えられます（EN / 日本語）。',
+      '📌 右下の「Privacy Policy」も吹っ飛ばせます。',
+    ]
+  },
+  stage_select: {
+    title: '📋 ステージ選択画面の遊び方',
+    lines: [
+      '6つのステージから好きなものを選んで挑戦！',
+      '看板の文字もグラスで吹っ飛ばせます。',
+      '',
+      '🎮 単一モード：指定回数成功するとクリア。',
+      '   スコアと★評価（最大3）が記録されます。',
+      '🔁 連続モード：何回連続成功できるか挑戦。',
+      '   ストリーク数とスコアが記録されます。',
+    ]
+  },
+  game: {
+    title: '🎮 ゲームの遊び方',
+    lines: [
+      '「オーダー！」のお客さんにグラスを届けましょう。',
+      '',
+      '📌 グラスをクリック → 引っ張る → 離して発射！',
+      '   引っ張る距離が長いほど速く飛びます。',
+      '💥 200%以上引っ張ると 500%ショット 発動！',
+      '🍶 障害物や棚の瓶にぶつかるとボーナス点。',
+      '⭐ 少ない投数でクリアするほど高スコア・高評価！',
+    ]
+  },
+};
+
+// ── チュートリアルモーダル描画（1ページ） ──
+function drawTutorialModal(){
+  if(!tutIsOpen()) return;
+  let data=TUT_CONTENT[tutorialState.screen];
+  if(!data) return;
+
+  push();
+  fill(0,0,0,200); noStroke(); rect(0,0,GAME_W,GAME_H);
+
+  let mw=580, mh=320, mx=(GAME_W-mw)/2, my=(GAME_H-mh)/2;
+  fill(18,14,38,252); stroke(120,100,200,220); strokeWeight(1.5);
+  rect(mx,my,mw,mh,14);
+
+  // タイトル
+  noStroke(); fill(255,230,100); textSize(17); textStyle(BOLD);
+  textAlign(CENTER,CENTER);
+  text(data.title, GAME_W/2, my+26);
+  textStyle(NORMAL);
+
+  stroke(80,60,140,160); strokeWeight(1);
+  line(mx+20,my+44,mx+mw-20,my+44);
+  noStroke();
+
+  // 本文
+  textAlign(LEFT,CENTER); textSize(13);
+  data.lines.forEach((l,i)=>{
+    if(l==='') return;
+    let isHighlight=l.startsWith('📌')||l.startsWith('💥')||l.startsWith('🍶')||
+                    l.startsWith('⭐')||l.startsWith('🎮')||l.startsWith('🔁');
+    fill(isHighlight?color(255,220,80):color(210,205,230));
+    text(l, mx+24, my+62+i*26);
+  });
+
+  // 閉じるボタン
+  let bw=130, bh=34, bx=mx+mw/2-65, by=my+mh-50;
+  let hovBtn=mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh;
+  fill(hovBtn?color(100,80,200):color(60,50,140),230);
+  stroke(140,120,220,200); strokeWeight(1);
+  rect(bx,by,bw,bh,8);
+  fill(220,215,255); noStroke(); textSize(13); textStyle(BOLD);
+  textAlign(CENTER,CENTER); text('閉じる ✓', bx+bw/2, by+bh/2);
+  textStyle(NORMAL);
+
+  pop();
+}
+
+// ── ヘルプボタン: titleWords/stageWordsに追加して吹っ飛ばし対応 ──
+// タイトル・ステージセレクト: kindで管理
+// ゲーム画面: 直接描画 + 単独フラグ
+let gameHelpBtnAlive = true;
+function resetGameHelpBtn(){ gameHelpBtnAlive=true; }
+
+function drawGameHelpButton(){
+  if(SCREEN!=='GAME') return;
+  if(!gameHelpBtnAlive) return;
+  let hx=GAME_W-22, hy=22;
+  let hov=dist(mouseX,mouseY,hx,hy)<18;
+  push();
+  fill(hov?color(140,120,220):color(100,90,180),220);
+  stroke(180,160,255,200); strokeWeight(1.5); circle(hx,hy,26);
+  fill(hov?color(255,255,255):color(235,230,255)); noStroke(); textSize(14); textStyle(BOLD);
+  textAlign(CENTER,CENTER); text('?',hx,hy+1);
+  textStyle(NORMAL); pop();
+}
 
 // ================================================================
 // プライバシーポリシー モーダル
