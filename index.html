@@ -113,6 +113,7 @@ let g={}, obs=[], custs=[], targetIdx=0;
 let shelfBottles=[];   // 棚のボトル（壊せる）
 let dragging=false, dStartX=0, dStartY=0;
 let mirrorMode=false;
+let showPrivacy=false;  // プライバシーポリシーモーダル表示フラグ
 let imgs={};            // 画像オブジェクト
 let imgLoaded={};       // 正常ロード確認フラグ（成功コールバックでのみtrue）
 function imgOK(key){ return imgLoaded[key]===true; }  // 成功時のみtrue  // 左右反転モード
@@ -779,6 +780,7 @@ function draw(){
     obstacleStep(); particleStep(); updateShelfBottles(); updateFloatingTexts();
   }
   if(shakeAmt>0.4) translate(-ox,-oy);
+  drawPrivacyModal();
   drawCursor();
 
 }
@@ -807,6 +809,7 @@ function initTitleWords(){
       kind:'small', sz:10, col:[80,80,80], hitR:80 },
     { txt:'Privacy Policy', x:GAME_W-70, y:GAME_H-18, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'privacy_link', sz:9, col:[80,80,100], hitR:55 },
+
     // 言語ボタン（左上・縦並び・English上）
     { txt:'English', x:60, y:33, vx:0,vy:0,va:0, angle:0, alive:true,
       kind:'lang_btn', sz:20, col:lang==='en'?[60,30,0]:[160,160,160], hitR:50, langKey:'en' },
@@ -2782,7 +2785,13 @@ function _pressAt(px,py){
 // INPUT
 // ================================================================
 function mousePressed(){
+  // モーダル表示中：どこでもクリックで閉じる
+  if(showPrivacy){ showPrivacy=false; return; }
+
   if(SCREEN==='TITLE'){
+    // Privacy Policy クリック判定（alive時のみモーダル表示）
+    let ppw=titleWords.find(w=>w.kind==='privacy_link'&&w.alive);
+    if(ppw && dist(mouseX,mouseY,ppw.x,ppw.y)<ppw.hitR){ showPrivacy=true; return; }
     // 言語ボタン判定（左上・縦並び）
     if(mouseX>10&&mouseX<110&&mouseY>14&&mouseY<52){ setLang('en'); playButton(); return; }
     if(mouseX>10&&mouseX<110&&mouseY>58&&mouseY<96){ setLang('ja'); playButton(); return; }
@@ -2952,5 +2961,82 @@ function mouseReleased(){
 }
 
 function windowResized(){ if(loopMode&&SCREEN==='GAME') buildLoopPath(); }
+
+// ================================================================
+// プライバシーポリシー モーダル
+// ================================================================
+function drawPrivacyModal(){
+  if(!showPrivacy) return;
+  push();
+  // 背景オーバーレイ
+  fill(0,0,0,190); noStroke(); rect(0,0,GAME_W,GAME_H);
+
+  // モーダルウィンドウ
+  let mw=680, mh=440, mx=(GAME_W-mw)/2, my=(GAME_H-mh)/2;
+  fill(22,18,38,248); stroke(100,100,160,200); strokeWeight(1.5);
+  rect(mx,my,mw,mh,12);
+
+  // タイトル
+  fill(200,200,255); noStroke(); textSize(16); textStyle(BOLD);
+  text('プライバシーポリシー / Privacy Policy', GAME_W/2, my+28);
+  textStyle(NORMAL);
+
+  // 区切り線
+  stroke(80,80,120,160); strokeWeight(1); line(mx+20,my+44,mx+mw-20,my+44);
+  noStroke();
+
+  // 本文
+  let lines_ja = [
+    '本サイト（BAR SLIDER）では、Google LLC が提供する Google アナリティクスを使用しています。',
+    '',
+    'Google アナリティクスは、Cookie を通じてお客様の行動データ（訪問日時・ページビュー・',
+    '滞在時間・アクセス経路など）を収集・分析します。個人を特定する情報は収集されません',
+    '（IP アドレスは匿名化されます）。収集データはサイト改善のみに使用されます。',
+    '',
+    'Google プライバシーポリシー：https://policies.google.com/privacy',
+    'GA 利用規約：https://marketingplatform.google.com/about/analytics/terms/jp/',
+    '',
+    'Cookie を無効にすることでデータ収集を拒否できます。',
+  ];
+  let lines_en = [
+    'This site (BAR SLIDER) uses Google Analytics by Google LLC.',
+    'It collects behavioral data via cookies (visit time, page views, etc.).',
+    'No personally identifiable info is collected. IPs are anonymized.',
+    'You can opt out by disabling cookies in your browser.',
+  ];
+
+  textSize(11); fill(200,195,220);
+  lines_ja.forEach((l,i)=>{
+    textAlign(LEFT,CENTER);
+    text(l, mx+24, my+62+i*19);
+  });
+
+  // 区切り線
+  stroke(80,80,120,100); strokeWeight(0.8);
+  line(mx+20, my+258, mx+mw-20, my+258);
+  noStroke();
+
+  textSize(10); fill(160,155,180);
+  lines_en.forEach((l,i)=>{
+    textAlign(LEFT,CENTER);
+    text(l, mx+24, my+270+i*17);
+  });
+
+  // 閉じるボタン
+  let bx=mx+mw/2-60, by=my+mh-46, bw=120, bh=32;
+  let hovClose=mouseX>bx&&mouseX<bx+bw&&mouseY>by&&mouseY<by+bh;
+  fill(hovClose?color(80,80,140):color(50,50,100),220);
+  stroke(120,120,180,200); strokeWeight(1);
+  rect(bx,by,bw,bh,8);
+  fill(220,220,255); noStroke(); textSize(13); textStyle(BOLD);
+  textAlign(CENTER,CENTER);
+  text('閉じる', bx+bw/2, by+bh/2);
+  textStyle(NORMAL);
+
+  // 「どこでもクリックで閉じる」ヒント
+  textSize(9); fill(100,100,140); textAlign(CENTER,CENTER);
+  text('画面をクリックで閉じます', GAME_W/2, my+mh-10);
+  pop();
+}
 function drawCursor(){ push(); noFill(); stroke(255,255,255,170); strokeWeight(1.5); circle(mouseX,mouseY,18); stroke(255,215,0,200); strokeWeight(1); point(mouseX,mouseY); pop(); }
 </script></body></html>
